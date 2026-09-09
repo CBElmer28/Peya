@@ -45,13 +45,36 @@ export type DniData = {
 
 export type FaceVerifyResult = { match: boolean; confidence: number }
 
+// Base de datos de prueba de usuarios registrados en el sistema
+export const REGISTERED_USERS_DB: Array<{ dni: string; email: string; name: string }> = [
+  { dni: "48219032", email: "demo@bankhub.com", name: "Ana Martínez" },
+  { dni: "10203040", email: "carlos.ruiz@bankhub.com", name: "Carlos Ruiz" },
+  { dni: "70809010", email: "lucia.fernandez@bankhub.com", name: "Lucía Fernández" },
+  { dni: "88888888", email: "ana.martinez@bankhub.com", name: "Ana Martínez" },
+]
+
+export function isDniRegistered(dni: string): boolean {
+  return REGISTERED_USERS_DB.some((u) => u.dni === dni.trim())
+}
+
+export function isEmailRegistered(email: string): boolean {
+  return REGISTERED_USERS_DB.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())
+}
+
 export async function lookupDni(dni: string): Promise<DniData> {
   // TODO: reemplazar por fetch real a un proveedor de consulta RENIEC en Perú,
   // ej. GET https://api.apis.net.pe/v2/reniec/dni?numero={dni}
   // Headers: Authorization: Bearer <API_KEY_APIS_PERU>
-  await new Promise((resolve) => setTimeout(resolve, 900))
+  await new Promise((resolve) => setTimeout(resolve, 800))
   if (dni.length !== 8 || !/^\d+$/.test(dni)) {
     throw new Error("DNI_NOT_FOUND")
+  }
+  // Verificación de usuario existente por DNI
+  if (isDniRegistered(dni)) {
+    const existing = REGISTERED_USERS_DB.find((u) => u.dni === dni.trim())
+    const err = new Error("DNI_ALREADY_REGISTERED")
+    ;(err as unknown as { userName?: string }).userName = existing?.name ?? "Usuario"
+    throw err
   }
   return {
     dni,
@@ -78,8 +101,18 @@ export async function registerUser(payload: {
   password: string
 }): Promise<{ userId: string; token: string }> {
   // TODO: user-management-service · POST /register
-  void payload
   await new Promise((resolve) => setTimeout(resolve, 700))
+  if (isDniRegistered(payload.dni)) {
+    throw new Error("DNI_ALREADY_REGISTERED")
+  }
+  if (isEmailRegistered(payload.email)) {
+    throw new Error("EMAIL_ALREADY_REGISTERED")
+  }
+  REGISTERED_USERS_DB.push({
+    dni: payload.dni,
+    email: payload.email.trim(),
+    name: "Nuevo Usuario",
+  })
   return { userId: crypto.randomUUID(), token: "mock-session-token" }
 }
 
@@ -113,27 +146,23 @@ function delay<T>(value: T): Promise<T> {
  * Credenciales de demostración: demo@bankhub.com / 123456
  */
 export async function login(email: string, password: string): Promise<Session> {
-  // --- Integración real (auth-service) ---
-  // const res = await fetch(`${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL}/auth/login`, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify({ email, password }),
-  // })
-  // if (res.status === 401) throw new Error("401")
-  // if (!res.ok) throw new Error("Error de red")
-  // return (await res.json()) as Session
-  // ---------------------------------------
+  const cleanEmail = email.trim().toLowerCase()
+  const matchedUser = REGISTERED_USERS_DB.find((u) => u.email.toLowerCase() === cleanEmail)
+  
+  const isDemo = cleanEmail === "demo@bankhub.com" && password === "123456"
+  const isRegisteredValid = matchedUser && (password === "123456" || password.length >= 8)
 
-  const valid = email.trim().toLowerCase() === "demo@bankhub.com" && password === "123456"
-  if (!valid) {
+  if (!isDemo && !isRegisteredValid) {
     // Simula respuesta 401 Unauthorized del auth-service.
     await delay(null)
     throw new Error("401")
   }
 
+  const name = matchedUser?.name ?? "Ana Martínez"
+
   return delay<Session>({
-    token: `mock.jwt.${Date.now()}`,
-    user: { name: "Ana Martínez", email: email.trim() },
+    token: `mock.jwt.${Date.now()}.${Math.random().toString(36).substring(2, 9)}`,
+    user: { name, email: cleanEmail },
   })
 }
 
