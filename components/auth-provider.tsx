@@ -1,7 +1,8 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
-import { login as loginRequest, type Session } from "@/lib/mock-api"
+import { loginApi } from "@/lib/api-client"
+import type { Session } from "@/lib/mock-api"
 
 type AuthContextValue = {
   session: Session | null
@@ -47,14 +48,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn = useCallback(async (email: string, password: string, rememberMe = true) => {
-    // Llama al auth-service simulado; lanza Error("401") si las credenciales fallan.
-    const result = await loginRequest(email, password)
-    setSessionState(result)
+    // Petición HTTP al Backend NestJS (POST /api/auth/login)
+    const result = await loginApi(email, password, rememberMe)
+    const sessionData: Session = {
+      token: result.accessToken,
+      user: {
+        name: result.user.name,
+        email: result.user.email,
+      },
+    }
+    setSessionState(sessionData)
     try {
       if (rememberMe) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(result))
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData))
       } else {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result))
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData))
       }
     } catch {}
   }, [])

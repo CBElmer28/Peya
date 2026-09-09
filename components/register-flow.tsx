@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react"
 import { AlertTriangle, Check, ChevronLeft, Loader2, ShieldCheck, Sparkles, Camera, RefreshCw, Upload, Image as ImageIcon, ArrowRight, UserCheck } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { lookupDni, registerUser, verifyFace, isDniRegistered, isEmailRegistered, type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
+import { lookupDniApi as lookupDni, registerApi as registerUser, verifyFaceApi as verifyFace, checkDniApi, checkEmailApi } from "@/lib/api-client"
+import { isDniRegistered, isEmailRegistered, type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
 import { cn } from "@/lib/utils"
 
 type Step = 1 | 2 | 3 | 4
