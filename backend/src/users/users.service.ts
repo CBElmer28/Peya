@@ -164,6 +164,22 @@ export class UsersService {
     return safeUser;
   }
 
+  async findByIdentifier(identifier: string): Promise<User | null> {
+    const clean = identifier.trim().toLowerCase();
+    return (
+      this.users.find(
+        (u) => u.email.toLowerCase() === clean || u.dni.trim() === identifier.trim(),
+      ) || null
+    );
+  }
+
+  async updatePassword(id: string, newPasswordHash: string): Promise<boolean> {
+    const user = this.users.find((u) => u.id === id);
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+    user.passwordHash = newPasswordHash;
+    return true;
+  }
+
   async remove(id: string): Promise<{ success: boolean }> {
     const index = this.users.findIndex((u) => u.id === id);
     if (index === -1) throw new NotFoundException('Usuario no encontrado');
