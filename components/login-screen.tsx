@@ -18,12 +18,10 @@ export function LoginScreen() {
     setError(null)
     setLoading(true)
     try {
-      // Delega en el auth-service simulado a través del contexto.
       await signIn(email, password)
-    } catch (err) {
-      // El auth-service devuelve 401 cuando las credenciales son inválidas.
-      const is401 = err instanceof Error && err.message === "401"
-      setError(is401 ? "Acceso denegado (401): correo o contraseña incorrectos." : "No se pudo conectar con el servidor.")
+    } catch (err: any) {
+      const msg = err?.message || err?.body?.message || "Acceso denegado (401): correo o contraseña incorrectos."
+      setError(msg)
     } finally {
       setLoading(false)
     }
