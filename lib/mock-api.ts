@@ -166,6 +166,16 @@ export async function login(email: string, password: string): Promise<Session> {
   })
 }
 
+export async function getCurrentUser(token: string): Promise<{ id: string; name: string; email: string; role: string }> {
+  void token
+  return delay({
+    id: 'usr-1',
+    name: 'Ana Martínez',
+    email: 'demo@bankhub.com',
+    role: 'admin',
+  })
+}
+
 /**
  * account-service · GET /accounts
  * Devuelve el resumen de cuentas del usuario autenticado.
