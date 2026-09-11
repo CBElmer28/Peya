@@ -46,11 +46,11 @@ export type DniData = {
 export type FaceVerifyResult = { match: boolean; confidence: number }
 
 // Base de datos de prueba de usuarios registrados en el sistema
-export const REGISTERED_USERS_DB: Array<{ dni: string; email: string; name: string }> = [
-  { dni: "48219032", email: "demo@bankhub.com", name: "Ana Martínez" },
-  { dni: "10203040", email: "carlos.ruiz@bankhub.com", name: "Carlos Ruiz" },
-  { dni: "70809010", email: "lucia.fernandez@bankhub.com", name: "Lucía Fernández" },
-  { dni: "88888888", email: "ana.martinez@bankhub.com", name: "Ana Martínez" },
+export const REGISTERED_USERS_DB: Array<{ dni: string; email: string; name: string; password: string }> = [
+  { dni: "48219032", email: "demo@bankhub.com", name: "Ana Martínez", password: "123456" },
+  { dni: "10203040", email: "carlos.ruiz@bankhub.com", name: "Carlos Ruiz", password: "123456" },
+  { dni: "70809010", email: "lucia.fernandez@bankhub.com", name: "Lucía Fernández", password: "123456" },
+  { dni: "88888888", email: "ana.martinez@bankhub.com", name: "Ana Martínez", password: "123456" },
 ]
 
 export function isDniRegistered(dni: string): boolean {
