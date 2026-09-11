@@ -147,31 +147,50 @@ export class ReniecService {
       throw new NotFoundException('DNI no encontrado en el padrón de RENIEC.');
     }
 
-    // 2. Si se ha configurado un TOKEN de API real de RENIEC (ej. ApisPeru, Decolecta, ApiPeru.dev)
-    const apiToken = process.env.RENIEC_API_TOKEN || process.env.APIS_PERU_TOKEN;
+    // 2. Si se ha configurado un TOKEN de API real de RENIEC (ej. apidni.com, apis.net.pe, decolecta, etc.)
+    const apiToken =
+      process.env.RENIEC_API_TOKEN ||
+      process.env.APIDNI_TOKEN ||
+      process.env.APIS_PERU_TOKEN;
+
     if (apiToken) {
       try {
         const apiUrl =
           process.env.RENIEC_API_URL ||
-          `https://api.apis.net.pe/v2/reniec/dni?numero=${cleanDni}`;
+          (process.env.APIDNI_TOKEN
+            ? `https://apidni.com/api/v2/dni/${cleanDni}`
+            : `https://api.apis.net.pe/v2/reniec/dni?numero=${cleanDni}`);
 
         const res = await fetch(apiUrl, {
           headers: {
             Authorization: `Bearer ${apiToken}`,
-            Referer: 'https://apis.net.pe/consulta-dni-api',
+            'Content-Type': 'application/json',
           },
         });
 
         if (res.ok) {
-          const data = (await res.json()) as any;
-          this.logger.log(`Consulta RENIEC real exitosa para DNI ${cleanDni}`);
-          return {
-            dni: cleanDni,
-            nombres: data.nombres || data.nombre || 'Ciudadano',
-            apellidoPaterno: data.apellidoPaterno || data.paterno || '',
-            apellidoMaterno: data.apellidoMaterno || data.materno || '',
-            fechaNacimiento: data.fechaNacimiento || '01/01/1995',
-          };
+          const raw = (await res.json()) as any;
+          const data = raw.data && typeof raw.data === 'object' && Object.keys(raw.data).length > 0 ? raw.data : raw;
+
+          const nombres =
+            data.nombres || data.nombre || data.nombres_completos || data.nombre_completo || '';
+          const apellidoPaterno =
+            data.apellidoPaterno || data.apellido_paterno || data.paterno || '';
+          const apellidoMaterno =
+            data.apellidoMaterno || data.apellido_materno || data.materno || '';
+          const fechaNacimiento =
+            data.fechaNacimiento || data.fecha_nacimiento || '01/01/1995';
+
+          if (nombres || apellidoPaterno) {
+            this.logger.log(`Consulta RENIEC en vivo exitosa para DNI ${cleanDni} vía API`);
+            return {
+              dni: cleanDni,
+              nombres: nombres || 'Ciudadano',
+              apellidoPaterno,
+              apellidoMaterno,
+              fechaNacimiento,
+            };
+          }
         }
       } catch (err) {
         this.logger.warn(`Error consultando API externa de RENIEC: ${err}. Usando padrón.`);
