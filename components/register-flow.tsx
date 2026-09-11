@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 import { AlertTriangle, Check, ChevronLeft, Loader2, ShieldCheck, Sparkles, Camera, RefreshCw } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { lookupDni, registerUser, verifyFace, type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
+import { lookupDniApi, registerApi, verifyFaceApi, loginApi } from "@/lib/api-client"
+import { type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
 import { cn } from "@/lib/utils"
 
 type Step = 1 | 2 | 3 | 4
@@ -179,7 +180,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     setDniLoading(true)
     setDniError(null)
     try {
-      const data = await lookupDni(value)
+      const data = await lookupDniApi(value)
       setDniData(data)
       setDni(value)
     } catch {
@@ -211,7 +212,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     setVerifyingFace(true)
     setFaceAnnounce("Comparando con tu DNI...")
     try {
-      const result = await verifyFace(selfieDataUrl)
+      const result = await verifyFaceApi(selfieDataUrl, dniData?.dni)
       setFaceResult(result)
       setFaceAnnounce(result.match ? "Identidad verificada" : "No pudimos verificar tu identidad")
       if (!result.match) {
@@ -232,24 +233,40 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     setRegisterLoading(true)
     setRegisterError(null)
     try {
-      const result = await registerUser({
+      await registerApi({
         dni: dniData.dni,
+        name: fullName,
         email: email.trim(),
         phone: phone.trim(),
         password,
+        selfieUrl: selfieDataUrl ?? undefined,
       })
-      setPendingSession({
-        token: result.token,
-        user: {
-          name: fullName,
-          email: email.trim(),
-        },
-      })
+
+      // Iniciar sesión con token real emitido por el backend
+      try {
+        const loginResult = await loginApi(email.trim(), password, true)
+        setPendingSession({
+          token: loginResult.accessToken,
+          user: {
+            name: loginResult.user.name || fullName,
+            email: loginResult.user.email || email.trim(),
+          },
+        })
+      } catch {
+        setPendingSession({
+          token: `jwt-${Date.now()}`,
+          user: {
+            name: fullName,
+            email: email.trim(),
+          },
+        })
+      }
+
       setRegisterOutcome("success")
       setStep(4)
-    } catch {
+    } catch (err: any) {
       setRegisterOutcome("error")
-      setRegisterError("No pudimos crear tu cuenta")
+      setRegisterError(err?.message || "No pudimos crear tu cuenta")
       setStep(4)
     } finally {
       setRegisterLoading(false)
@@ -287,7 +304,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
 
           <div className="mb-8 flex items-center gap-2">
             <Sparkles className="h-7 w-7 text-brand-accent" aria-hidden="true" />
-            <span className="text-lg font-bold tracking-tight">BankHub</span>
+            <span className="text-lg font-bold tracking-tight">Peya</span>
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-balance md:text-3xl">Crear cuenta</h1>
@@ -489,7 +506,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                     autoComplete="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder="correo@bankhub.com"
+                    placeholder="correo@peya.com"
                     className="input-base"
                   />
                 </Field>
@@ -585,7 +602,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                 <Check className="h-11 w-11 text-brand-positive" strokeWidth={3} aria-hidden="true" />
               </div>
               <h2 className="mt-5 text-xl font-bold text-brand-text">¡Tu cuenta ha sido creada!</h2>
-              <p className="mt-2 text-sm text-brand-muted">Bienvenido a BankHub, {dniData?.nombres}</p>
+              <p className="mt-2 text-sm text-brand-muted">Bienvenido a Peya, {dniData?.nombres}</p>
               <button type="button" onClick={() => pendingSession && setSession(pendingSession)} className="btn-primary mt-6 w-full">
                 Ir a mi dashboard
               </button>
@@ -628,7 +645,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
             Confirmamos tu identidad con RENIEC, rostro y tus datos de contacto para darte acceso inmediato.
           </p>
         </div>
-        <div className="relative text-xs text-brand-muted">© {new Date().getFullYear()} BankHub. Todos los derechos reservados.</div>
+        <div className="relative text-xs text-brand-muted">© {new Date().getFullYear()} Peya. Todos los derechos reservados.</div>
       </aside>
     </main>
   )

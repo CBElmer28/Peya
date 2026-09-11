@@ -19,17 +19,19 @@ import {
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
 import {
-  getAdminMetrics,
-  getSupervisedAccounts,
-  getClients,
-  createClient,
-  updateClient,
-  deleteClient,
-  type AdminMetric,
-  type SupervisedAccount,
-  type Client,
-  type ClientRole,
-  type ClientStatus,
+  getClientsApi,
+  createClientApi,
+  updateClientApi,
+  deleteClientApi,
+  getAdminMetricsApi,
+  getSupervisedAccountsApi,
+} from "@/lib/api-client"
+import type {
+  AdminMetric,
+  SupervisedAccount,
+  Client,
+  ClientRole,
+  ClientStatus,
 } from "@/lib/mock-api"
 
 type AdminTab = "dashboard" | "clients"
@@ -311,7 +313,7 @@ function ClientDialog({
               value={form.email}
               onChange={(event) => updateField("email", event.target.value)}
               className="input-base"
-              placeholder="usuario@bankhub.com"
+              placeholder="usuario@peya.com"
             />
           </label>
 
@@ -492,12 +494,18 @@ function AdminDashboard() {
     if (!session) return
     let active = true
     setLoading(true)
-    Promise.all([getAdminMetrics(session.token), getSupervisedAccounts(session.token)]).then(([m, a]) => {
-      if (!active) return
-      setMetrics(m)
-      setAccounts(a)
-      setLoading(false)
-    })
+    Promise.all([getAdminMetricsApi(session.token), getSupervisedAccountsApi(session.token)])
+      .then(([m, a]) => {
+        if (!active) return
+        setMetrics(m)
+        setAccounts(a)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error("Error cargando dashboard:", err)
+        if (!active) return
+        setLoading(false)
+      })
     return () => {
       active = false
     }
@@ -682,11 +690,17 @@ function ClientManagement() {
     if (!session) return
     let active = true
     setLoading(true)
-    getClients(session.token).then((c) => {
-      if (!active) return
-      setClients(c)
-      setLoading(false)
-    })
+    getClientsApi(session.token)
+      .then((c) => {
+        if (!active) return
+        setClients(c)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error("Error cargando clientes:", err)
+        if (!active) return
+        setLoading(false)
+      })
     return () => {
       active = false
     }
@@ -765,7 +779,7 @@ function ClientManagement() {
     }
     setClients((prev) => [optimisticClient, ...prev])
     try {
-      const created = await createClient(session.token, {
+      const created = await createClientApi(session.token, {
         name: payload.name,
         email: payload.email,
         role: payload.role,
@@ -783,7 +797,7 @@ function ClientManagement() {
     const optimistic: Client = { ...previous, ...payload }
     setClients((prev) => prev.map((client) => (client.id === previous.id ? optimistic : client)))
     try {
-      const updated = await updateClient(session.token, previous.id, payload)
+      const updated = await updateClientApi(session.token, previous.id, payload)
       setClients((prev) => prev.map((client) => (client.id === previous.id ? updated : client)))
     } catch {
       setClients((prev) => prev.map((client) => (client.id === previous.id ? previous : client)))
@@ -797,7 +811,7 @@ function ClientManagement() {
     const target = deleteTarget
     setClients((prev) => prev.filter((client) => client.id !== target.id))
     try {
-      await deleteClient(session.token, target.id)
+      await deleteClientApi(session.token, target.id)
       closeDeleteModal()
     } catch {
       setClients((prev) => [target, ...prev])

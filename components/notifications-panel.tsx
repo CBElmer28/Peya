@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { ArrowLeftRight, BellRing, FileText, LogIn, ShieldAlert, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
-import { getNotifications, type AppNotification } from "@/lib/mock-api"
+import { getNotificationsApi } from "@/lib/api-client"
+import type { AppNotification } from "@/lib/mock-api"
 
 const NOTIFICATION_CONFIG: Record<
   AppNotification["type"],
@@ -30,12 +31,18 @@ export function NotificationsPanel({
   useEffect(() => {
     if (!session) return
     let active = true
-    getNotifications(session.token).then((data) => {
-      if (!active) return
-      setNotifications(data)
-      onUnreadCountChange?.(data.filter((notification) => notification.unread).length)
-      setLoading(false)
-    })
+    getNotificationsApi(session.token)
+      .then((data) => {
+        if (!active) return
+        setNotifications(data)
+        onUnreadCountChange?.(data.filter((notification) => notification.unread).length)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error("Error cargando notificaciones:", err)
+        if (!active) return
+        setLoading(false)
+      })
     return () => {
       active = false
     }

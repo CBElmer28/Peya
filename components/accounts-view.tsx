@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { ChevronDown, ChevronLeft, ChevronRight, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
-import { createAccount, getAccounts, type Account } from "@/lib/mock-api"
+import { createAccountApi, getAccountsApi } from "@/lib/api-client"
+import type { Account } from "@/lib/mock-api"
 
 const PAGE_SIZE = 8
 
@@ -188,11 +189,17 @@ export function AccountsView() {
     if (!session) return
     let active = true
     setLoading(true)
-    getAccounts(session.token).then((items) => {
-      if (!active) return
-      setAccounts(items)
-      setLoading(false)
-    })
+    getAccountsApi(session.token)
+      .then((items) => {
+        if (!active) return
+        setAccounts(items)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error("Error cargando cuentas:", err)
+        if (!active) return
+        setLoading(false)
+      })
     return () => {
       active = false
     }
@@ -238,8 +245,10 @@ export function AccountsView() {
     setAccounts((prev) => [optimisticAccount, ...prev])
 
     try {
-      const created = await createAccount(session.token, { type, currency: option.currency })
+      const created = await createAccountApi(session.token, { type, currency: option.currency })
       setAccounts((prev) => prev.map((account) => (account.id === optimisticId ? created : account)))
+    } catch {
+      setAccounts((prev) => prev.filter((account) => account.id !== optimisticId))
     } finally {
       setPendingType(null)
     }
