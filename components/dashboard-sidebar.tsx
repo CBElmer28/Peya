@@ -47,7 +47,7 @@ export function DashboardSidebar({
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-accent" aria-hidden="true">
           <span className="text-sm font-bold text-brand-bg">B</span>
         </span>
-        <span className="text-lg font-bold tracking-tight text-brand-text">BankHub</span>
+        <span className="text-lg font-bold tracking-tight text-brand-text">Peya</span>
       </div>
 
       <nav className="flex flex-1 flex-col gap-7 overflow-y-auto p-3">
