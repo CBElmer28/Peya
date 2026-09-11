@@ -124,6 +124,67 @@ export async function getAccountsApi(token?: string) {
   );
 }
 
+export async function logoutApi(token?: string) {
+  return fetchWithFallback(
+    '/auth/logout',
+    {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    async () => ({ success: true, message: 'Sesión cerrada.' }),
+  );
+}
+
+export async function getProfileApi(token: string) {
+  return fetchWithFallback(
+    '/auth/profile',
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    async () => mockApi.getCurrentUser(token),
+  );
+}
+
+export async function forgotPasswordApi(identifier: string) {
+  return fetchWithFallback(
+    '/auth/forgot-password',
+    {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    },
+    async () => ({
+      success: true,
+      message: 'Se ha enviado un código de recuperación a tu correo.',
+    }),
+  );
+}
+
+export async function verifyResetTokenApi(email: string, token: string) {
+  return fetchWithFallback(
+    '/auth/verify-reset-token',
+    {
+      method: 'POST',
+      body: JSON.stringify({ email, token }),
+    },
+    async () => ({ valid: true, message: 'Código verificado.' }),
+  );
+}
+
+export async function resetPasswordApi(email: string, token: string, newPassword: string) {
+  return fetchWithFallback(
+    '/auth/reset-password',
+    {
+      method: 'POST',
+      body: JSON.stringify({ email, token, newPassword }),
+    },
+    async () => ({
+      success: true,
+      message: 'Contraseña actualizada correctamente.',
+    }),
+  );
+}
+
 export async function createTransferApi(
   token: string,
   payload: mockApi.TransferPayload,
@@ -142,3 +203,5 @@ export async function createTransferApi(
     () => mockApi.createTransfer(token, payload),
   );
 }
+
+
