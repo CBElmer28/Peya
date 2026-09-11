@@ -40,6 +40,28 @@ async function fetchWithFallback<T>(
   }
 }
 
+export async function getNotificationsApi(token?: string) {
+  return fetchWithFallback(
+    '/accounts/notifications',
+    {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.getNotifications(token || ''),
+  );
+}
+
+export async function getMovementsApi(token?: string) {
+  return fetchWithFallback(
+    '/accounts/movements',
+    {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.getMovements(token || ''),
+  );
+}
+
 export async function loginApi(email: string, password: string, rememberMe = true) {
   return fetchWithFallback(
     '/auth/login',

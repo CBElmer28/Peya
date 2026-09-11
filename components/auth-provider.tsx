@@ -67,14 +67,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [])
 
-  const signOut = useCallback(() => {
-    // Invalida el token y elimina la sesión
+  const signOut = useCallback(async () => {
+    try {
+      if (session?.token) {
+        await logoutApi(session.token)
+      }
+    } catch {}
     setSessionState(null)
     try {
       localStorage.removeItem(STORAGE_KEY)
       sessionStorage.removeItem(STORAGE_KEY)
     } catch {}
-  }, [])
+  }, [session?.token])
 
   const value = useMemo<AuthContextValue>(
     () => ({ session, isAuthenticated: session !== null, signIn, setSession, signOut }),
