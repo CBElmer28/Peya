@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 import { AlertTriangle, Check, ChevronLeft, Loader2, ShieldCheck, Sparkles, Camera, RefreshCw } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { lookupDni, registerUser, verifyFace, type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
+import { lookupDniApi, registerApi, verifyFaceApi } from "@/lib/api-client"
+import { type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
 import { cn } from "@/lib/utils"
 
 type Step = 1 | 2 | 3 | 4
@@ -179,7 +180,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     setDniLoading(true)
     setDniError(null)
     try {
-      const data = await lookupDni(value)
+      const data = await lookupDniApi(value)
       setDniData(data)
       setDni(value)
     } catch {
@@ -211,7 +212,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     setVerifyingFace(true)
     setFaceAnnounce("Comparando con tu DNI...")
     try {
-      const result = await verifyFace(selfieDataUrl)
+      const result = await verifyFaceApi(selfieDataUrl, dniData?.dni)
       setFaceResult(result)
       setFaceAnnounce(result.match ? "Identidad verificada" : "No pudimos verificar tu identidad")
       if (!result.match) {
@@ -232,14 +233,15 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     setRegisterLoading(true)
     setRegisterError(null)
     try {
-      const result = await registerUser({
+      await registerApi({
         dni: dniData.dni,
         email: email.trim(),
         phone: phone.trim(),
         password,
+        selfieUrl: selfieDataUrl ?? undefined,
       })
       setPendingSession({
-        token: result.token,
+        token: "mock-session-token",
         user: {
           name: fullName,
           email: email.trim(),

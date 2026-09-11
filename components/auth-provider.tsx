@@ -1,7 +1,8 @@
 "use client"
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
-import { login as loginRequest, type Session } from "@/lib/mock-api"
+import { loginApi } from "@/lib/api-client"
+import { type Session } from "@/lib/mock-api"
 
 type AuthContextValue = {
   session: Session | null
@@ -17,9 +18,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
 
   const signIn = useCallback(async (email: string, password: string) => {
-    // Llama al auth-service simulado; lanza Error("401") si las credenciales fallan.
-    const result = await loginRequest(email, password)
-    setSession(result)
+    const result = await loginApi(email, password, true)
+    setSession({
+      token: result.accessToken,
+      user: {
+        name: result.user.name,
+        email: result.user.email,
+      },
+    })
   }, [])
 
   const signOut = useCallback(() => {
