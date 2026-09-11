@@ -47,10 +47,10 @@ export type FaceVerifyResult = { match: boolean; confidence: number }
 
 // Base de datos de prueba de usuarios registrados en el sistema
 export const REGISTERED_USERS_DB: Array<{ dni: string; email: string; name: string }> = [
-  { dni: "48219032", email: "demo@bankhub.com", name: "Ana Martínez" },
-  { dni: "10203040", email: "carlos.ruiz@bankhub.com", name: "Carlos Ruiz" },
-  { dni: "70809010", email: "lucia.fernandez@bankhub.com", name: "Lucía Fernández" },
-  { dni: "88888888", email: "ana.martinez@bankhub.com", name: "Ana Martínez" },
+  { dni: "48219032", email: "demo@peya.com", name: "Ana Martínez" },
+  { dni: "10203040", email: "carlos.ruiz@peya.com", name: "Carlos Ruiz" },
+  { dni: "70809010", email: "lucia.fernandez@peya.com", name: "Lucía Fernández" },
+  { dni: "88888888", email: "ana.martinez@peya.com", name: "Ana Martínez" },
 ]
 
 export function isDniRegistered(dni: string): boolean {
@@ -673,19 +673,13 @@ export async function getSupervisedAccounts(token: string): Promise<SupervisedAc
  * Devuelve la lista de clientes para el CRUD administrativo.
  */
 export async function getClients(token: string): Promise<Client[]> {
-  // --- Integración real (user-management-service) ---
-  // const res = await fetch(`${process.env.NEXT_PUBLIC_USER_MGMT_SERVICE_URL}/users`, {
-  //   headers: { Authorization: `Bearer ${token}` },
-  // })
-  // return (await res.json()) as Client[]
-  // -------------------------------------------------
   void token
 
   return delay<Client[]>([
     {
       id: "c1",
       name: "Ana Martínez",
-      email: "ana.martinez@bankhub.com",
+      email: "ana.martinez@peya.com",
       status: "active",
       role: "admin",
       registeredAt: "2024-01-14",
@@ -693,7 +687,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c2",
       name: "Carlos Ruiz",
-      email: "carlos.ruiz@bankhub.com",
+      email: "carlos.ruiz@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-02-03",
@@ -701,7 +695,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c3",
       name: "Lucía Fernández",
-      email: "lucia.fernandez@bankhub.com",
+      email: "lucia.fernandez@peya.com",
       status: "inactive",
       role: "client",
       registeredAt: "2024-02-21",
@@ -709,7 +703,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c4",
       name: "Diego Torres",
-      email: "diego.torres@bankhub.com",
+      email: "diego.torres@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-03-09",
@@ -717,7 +711,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c5",
       name: "María López",
-      email: "maria.lopez@bankhub.com",
+      email: "maria.lopez@peya.com",
       status: "inactive",
       role: "client",
       registeredAt: "2024-03-27",
@@ -725,7 +719,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c6",
       name: "Javier Gómez",
-      email: "javier.gomez@bankhub.com",
+      email: "javier.gomez@peya.com",
       status: "active",
       role: "admin",
       registeredAt: "2024-04-11",
@@ -733,7 +727,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c7",
       name: "Sofía Herrera",
-      email: "sofia.herrera@bankhub.com",
+      email: "sofia.herrera@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-05-02",
@@ -741,7 +735,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c8",
       name: "Pablo Díaz",
-      email: "pablo.diaz@bankhub.com",
+      email: "pablo.diaz@peya.com",
       status: "inactive",
       role: "client",
       registeredAt: "2024-05-19",
@@ -749,7 +743,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c9",
       name: "Valentina Cruz",
-      email: "valentina.cruz@bankhub.com",
+      email: "valentina.cruz@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-06-01",
@@ -757,7 +751,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c10",
       name: "Andrés Molina",
-      email: "andres.molina@bankhub.com",
+      email: "andres.molina@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-06-15",
