@@ -83,6 +83,15 @@ export async function registerUser(payload: {
   return { userId: crypto.randomUUID(), token: "mock-session-token" }
 }
 
+export function isDniRegistered(dni: string): boolean {
+  const normalized = dni.trim()
+  return normalized === "48219032" || normalized === "10203040" || normalized === "70809010"
+}
+
+export function isEmailRegistered(email: string): boolean {
+  return email.trim().toLowerCase() === "demo@bankhub.com" || email.trim().toLowerCase() === "ana.martinez@bankhub.com"
+}
+
 function formatCurrency(amount: number, currency: "PEN" | "USD"): string {
   const formatted = new Intl.NumberFormat("es-PE", {
     minimumFractionDigits: 2,
