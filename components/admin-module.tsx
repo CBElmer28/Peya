@@ -311,7 +311,7 @@ function ClientDialog({
               value={form.email}
               onChange={(event) => updateField("email", event.target.value)}
               className="input-base"
-              placeholder="usuario@bankhub.com"
+              placeholder="usuario@peya.com"
             />
           </label>
 

@@ -89,7 +89,7 @@ export function isDniRegistered(dni: string): boolean {
 }
 
 export function isEmailRegistered(email: string): boolean {
-  return email.trim().toLowerCase() === "demo@bankhub.com" || email.trim().toLowerCase() === "ana.martinez@bankhub.com"
+  return email.trim().toLowerCase() === "demo@peya.com" || email.trim().toLowerCase() === "ana.martinez@peya.com"
 }
 
 function formatCurrency(amount: number, currency: "PEN" | "USD"): string {
@@ -119,7 +119,7 @@ function delay<T>(value: T): Promise<T> {
 /**
  * auth-service · POST /auth/login
  * Valida credenciales y devuelve un token de sesión.
- * Credenciales de demostración: demo@bankhub.com / 123456
+ * Credenciales de demostración: demo@peya.com / 123456
  */
 export async function login(email: string, password: string): Promise<Session> {
   // --- Integración real (auth-service) ---
@@ -133,7 +133,7 @@ export async function login(email: string, password: string): Promise<Session> {
   // return (await res.json()) as Session
   // ---------------------------------------
 
-  const valid = email.trim().toLowerCase() === "demo@bankhub.com" && password === "123456"
+  const valid = email.trim().toLowerCase() === "demo@peya.com" && password === "123456"
   if (!valid) {
     // Simula respuesta 401 Unauthorized del auth-service.
     await delay(null)
@@ -655,7 +655,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c1",
       name: "Ana Martínez",
-      email: "ana.martinez@bankhub.com",
+      email: "ana.martinez@peya.com",
       status: "active",
       role: "admin",
       registeredAt: "2024-01-14",
@@ -663,7 +663,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c2",
       name: "Carlos Ruiz",
-      email: "carlos.ruiz@bankhub.com",
+      email: "carlos.ruiz@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-02-03",
@@ -671,7 +671,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c3",
       name: "Lucía Fernández",
-      email: "lucia.fernandez@bankhub.com",
+      email: "lucia.fernandez@peya.com",
       status: "inactive",
       role: "client",
       registeredAt: "2024-02-21",
@@ -679,7 +679,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c4",
       name: "Diego Torres",
-      email: "diego.torres@bankhub.com",
+      email: "diego.torres@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-03-09",
@@ -687,7 +687,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c5",
       name: "María López",
-      email: "maria.lopez@bankhub.com",
+      email: "maria.lopez@peya.com",
       status: "inactive",
       role: "client",
       registeredAt: "2024-03-27",
@@ -695,7 +695,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c6",
       name: "Javier Gómez",
-      email: "javier.gomez@bankhub.com",
+      email: "javier.gomez@peya.com",
       status: "active",
       role: "admin",
       registeredAt: "2024-04-11",
@@ -703,7 +703,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c7",
       name: "Sofía Herrera",
-      email: "sofia.herrera@bankhub.com",
+      email: "sofia.herrera@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-05-02",
@@ -711,7 +711,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c8",
       name: "Pablo Díaz",
-      email: "pablo.diaz@bankhub.com",
+      email: "pablo.diaz@peya.com",
       status: "inactive",
       role: "client",
       registeredAt: "2024-05-19",
@@ -719,7 +719,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c9",
       name: "Valentina Cruz",
-      email: "valentina.cruz@bankhub.com",
+      email: "valentina.cruz@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-06-01",
@@ -727,7 +727,7 @@ export async function getClients(token: string): Promise<Client[]> {
     {
       id: "c10",
       name: "Andrés Molina",
-      email: "andres.molina@bankhub.com",
+      email: "andres.molina@peya.com",
       status: "active",
       role: "client",
       registeredAt: "2024-06-15",

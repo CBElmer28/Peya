@@ -40,7 +40,7 @@ export function LoginScreen() {
         <div className="mx-auto w-full max-w-md">
           <div className="mb-8 flex items-center gap-2">
             <Landmark className="h-7 w-7 text-brand-accent" aria-hidden="true" />
-            <span className="text-lg font-bold tracking-tight">BankHub</span>
+            <span className="text-lg font-bold tracking-tight">Peya</span>
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-balance md:text-3xl">Inicia sesión</h1>
@@ -58,7 +58,7 @@ export function LoginScreen() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="demo@bankhub.com"
+                placeholder="demo@peya.com"
                 className="rounded-lg border border-white/15 bg-brand-surface px-4 py-3 text-sm text-brand-text placeholder:text-brand-muted/60 outline-none transition-colors focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/30"
               />
             </div>
@@ -106,7 +106,7 @@ export function LoginScreen() {
             </p>
 
             <p className="text-xs text-brand-muted">
-              Demo: <span className="font-semibold text-brand-light">demo@bankhub.com</span> /{" "}
+              Demo: <span className="font-semibold text-brand-light">demo@peya.com</span> /{" "}
               <span className="font-semibold text-brand-light">123456</span>
             </p>
           </form>
@@ -129,7 +129,7 @@ export function LoginScreen() {
             Una plataforma financiera moderna diseñada para darte control total sobre tu dinero.
           </p>
         </div>
-        <div className="relative text-xs text-brand-muted">© {new Date().getFullYear()} BankHub. Todos los derechos reservados.</div>
+        <div className="relative text-xs text-brand-muted">© {new Date().getFullYear()} Peya. Todos los derechos reservados.</div>
       </aside>
     </main>
   )

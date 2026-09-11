@@ -289,7 +289,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
 
           <div className="mb-8 flex items-center gap-2">
             <Sparkles className="h-7 w-7 text-brand-accent" aria-hidden="true" />
-            <span className="text-lg font-bold tracking-tight">BankHub</span>
+            <span className="text-lg font-bold tracking-tight">Peya</span>
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-balance md:text-3xl">Crear cuenta</h1>
@@ -491,7 +491,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                     autoComplete="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder="correo@bankhub.com"
+                    placeholder="correo@peya.com"
                     className="input-base"
                   />
                 </Field>
@@ -587,7 +587,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                 <Check className="h-11 w-11 text-brand-positive" strokeWidth={3} aria-hidden="true" />
               </div>
               <h2 className="mt-5 text-xl font-bold text-brand-text">¡Tu cuenta ha sido creada!</h2>
-              <p className="mt-2 text-sm text-brand-muted">Bienvenido a BankHub, {dniData?.nombres}</p>
+              <p className="mt-2 text-sm text-brand-muted">Bienvenido a Peya, {dniData?.nombres}</p>
               <button type="button" onClick={() => pendingSession && setSession(pendingSession)} className="btn-primary mt-6 w-full">
                 Ir a mi dashboard
               </button>
@@ -630,7 +630,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
             Confirmamos tu identidad con RENIEC, rostro y tus datos de contacto para darte acceso inmediato.
           </p>
         </div>
-        <div className="relative text-xs text-brand-muted">© {new Date().getFullYear()} BankHub. Todos los derechos reservados.</div>
+        <div className="relative text-xs text-brand-muted">© {new Date().getFullYear()} Peya. Todos los derechos reservados.</div>
       </aside>
     </main>
   )

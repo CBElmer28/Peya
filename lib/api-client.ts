@@ -31,7 +31,7 @@ async function fetchWithFallback<T>(
     return (await res.json()) as T
   } catch (err: any) {
     if (err?.name === "TypeError" && String(err?.message || "").includes("fetch")) {
-      console.warn(`[BankHub API] Backend offline en ${BASE_URL}${endpoint}. Usando fallback.`)
+      console.warn(`[Peya API] Backend offline en ${BASE_URL}${endpoint}. Usando fallback.`)
       return fallbackFn()
     }
     throw err
