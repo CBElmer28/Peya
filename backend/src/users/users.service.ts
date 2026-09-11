@@ -104,7 +104,7 @@ export class UsersService {
     const newUser: User = {
       id: `usr-${Date.now()}`,
       dni: cleanDni,
-      name: 'Priscilla Fernanda Quispe Torres',
+      name: dto.name?.trim() || 'Priscilla Fernanda Quispe Torres',
       email: cleanEmail,
       phone: dto.phone,
       passwordHash,

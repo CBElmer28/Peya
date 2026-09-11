@@ -40,7 +40,7 @@ async function fetchWithFallback<T>(
   }
 }
 
-export async function getNotificationsApi(token?: string) {
+export async function getNotificationsApi(token?: string): Promise<mockApi.AppNotification[]> {
   return fetchWithFallback(
     '/accounts/notifications',
     {
@@ -51,7 +51,7 @@ export async function getNotificationsApi(token?: string) {
   );
 }
 
-export async function getMovementsApi(token?: string) {
+export async function getMovementsApi(token?: string): Promise<mockApi.Movement[]> {
   return fetchWithFallback(
     '/accounts/movements',
     {
@@ -59,6 +59,17 @@ export async function getMovementsApi(token?: string) {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
     () => mockApi.getMovements(token || ''),
+  );
+}
+
+export async function getAllMovementsApi(token?: string): Promise<mockApi.Movement[]> {
+  return fetchWithFallback(
+    '/accounts/movements',
+    {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.getAllMovements(token || ''),
   );
 }
 
@@ -82,6 +93,7 @@ export async function loginApi(email: string, password: string, rememberMe = tru
 
 export async function registerApi(payload: {
   dni: string;
+  name?: string;
   email: string;
   phone: string;
   password: string;
@@ -95,7 +107,7 @@ export async function registerApi(payload: {
     },
     async () => {
       const res = await mockApi.registerUser(payload);
-      return { userId: res.userId, email: payload.email, name: 'Nuevo Usuario' };
+      return { userId: res.userId, email: payload.email, name: payload.name || 'Nuevo Usuario' };
     },
   );
 }
@@ -135,7 +147,7 @@ export async function checkEmailApi(email: string) {
   );
 }
 
-export async function getAccountsApi(token?: string) {
+export async function getAccountsApi(token?: string): Promise<mockApi.Account[]> {
   return fetchWithFallback(
     '/accounts',
     {
@@ -143,6 +155,21 @@ export async function getAccountsApi(token?: string) {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
     () => mockApi.getAccounts(token || ''),
+  );
+}
+
+export async function createAccountApi(
+  token: string,
+  payload: { type: 'savings' | 'checking' | 'usd'; currency: 'PEN' | 'USD' },
+): Promise<mockApi.Account> {
+  return fetchWithFallback(
+    '/accounts',
+    {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    },
+    () => mockApi.createAccount(token, payload),
   );
 }
 
@@ -226,4 +253,83 @@ export async function createTransferApi(
   );
 }
 
+export async function getClientsApi(token?: string): Promise<mockApi.Client[]> {
+  return fetchWithFallback(
+    '/users',
+    {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.getClients(token || ''),
+  );
+}
 
+export async function createClientApi(
+  token: string,
+  payload: { name: string; email: string; role: mockApi.ClientRole },
+): Promise<mockApi.Client> {
+  return fetchWithFallback(
+    '/users',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    },
+    () => mockApi.createClient(token, payload),
+  );
+}
+
+export async function updateClientApi(
+  token: string,
+  clientId: string,
+  payload: { name: string; email: string; role: mockApi.ClientRole; status: mockApi.ClientStatus },
+): Promise<mockApi.Client> {
+  return fetchWithFallback(
+    `/users/${encodeURIComponent(clientId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    },
+    () => mockApi.updateClient(token, clientId, payload),
+  );
+}
+
+export async function deleteClientApi(token: string, clientId: string): Promise<{ success?: boolean; ok?: boolean }> {
+  return fetchWithFallback(
+    `/users/${encodeURIComponent(clientId)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    () => mockApi.deleteClient(token, clientId),
+  );
+}
+
+export async function getAdminMetricsApi(token?: string): Promise<mockApi.AdminMetric[]> {
+  return fetchWithFallback(
+    '/admin/metrics',
+    {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.getAdminMetrics(token || ''),
+  );
+}
+
+export async function getSupervisedAccountsApi(token?: string): Promise<mockApi.SupervisedAccount[]> {
+  return fetchWithFallback(
+    '/admin/accounts',
+    {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.getSupervisedAccounts(token || ''),
+  );
+}

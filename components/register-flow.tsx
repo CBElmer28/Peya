@@ -235,6 +235,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     try {
       await registerApi({
         dni: dniData.dni,
+        name: fullName,
         email: email.trim(),
         phone: phone.trim(),
         password,

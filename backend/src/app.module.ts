@@ -6,6 +6,7 @@ import { ReniecModule } from './reniec/reniec.module';
 import { KycModule } from './kyc/kyc.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { TransactionsModule } from './transactions/transactions.module';
     KycModule,
     AccountsModule,
     TransactionsModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

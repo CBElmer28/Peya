@@ -19,6 +19,15 @@ export class RegisterDto {
   dni: string;
 
   @ApiProperty({
+    example: 'Priscilla Fernanda Quispe Torres',
+    required: false,
+    description: 'Nombre completo obtenido de RENIEC',
+  })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({
     example: 'usuario@bankhub.com',
     description: 'Correo electrónico único del usuario',
   })
