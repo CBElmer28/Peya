@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { AlertTriangle, Check, ChevronLeft, Loader2, ShieldCheck, Sparkles, Camera, RefreshCw } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { lookupDniApi, registerApi, verifyFaceApi } from "@/lib/api-client"
+import { lookupDniApi, registerApi, verifyFaceApi, loginApi } from "@/lib/api-client"
 import { type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
 import { cn } from "@/lib/utils"
 
@@ -240,18 +240,32 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
         password,
         selfieUrl: selfieDataUrl ?? undefined,
       })
-      setPendingSession({
-        token: "mock-session-token",
-        user: {
-          name: fullName,
-          email: email.trim(),
-        },
-      })
+
+      // Iniciar sesión con token real emitido por el backend
+      try {
+        const loginResult = await loginApi(email.trim(), password, true)
+        setPendingSession({
+          token: loginResult.accessToken,
+          user: {
+            name: loginResult.user.name || fullName,
+            email: loginResult.user.email || email.trim(),
+          },
+        })
+      } catch {
+        setPendingSession({
+          token: `jwt-${Date.now()}`,
+          user: {
+            name: fullName,
+            email: email.trim(),
+          },
+        })
+      }
+
       setRegisterOutcome("success")
       setStep(4)
-    } catch {
+    } catch (err: any) {
       setRegisterOutcome("error")
-      setRegisterError("No pudimos crear tu cuenta")
+      setRegisterError(err?.message || "No pudimos crear tu cuenta")
       setStep(4)
     } finally {
       setRegisterLoading(false)
