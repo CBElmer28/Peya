@@ -78,6 +78,7 @@ export class UsersService {
   async register(dto: RegisterDto): Promise<{ userId: string; email: string; name: string }> {
     const cleanDni = dto.dni.trim();
     const cleanEmail = dto.email.trim().toLowerCase();
+    const cleanPhone = dto.phone.replace(/\D/g, '').replace(/^51/, '');
 
     // Verificación de DNI existente
     const existingDni = this.users.find((u) => u.dni === cleanDni);
@@ -106,7 +107,7 @@ export class UsersService {
       dni: cleanDni,
       name: dto.name?.trim() || 'Priscilla Fernanda Quispe Torres',
       email: cleanEmail,
-      phone: dto.phone,
+      phone: cleanPhone,
       passwordHash,
       role: 'client',
       status: 'active',

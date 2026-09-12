@@ -20,9 +20,28 @@ async function fetchWithFallback<T>(
     });
 
     if (!res.ok) {
-      const errorBody = await res.json().catch(() => ({}));
-      const message = errorBody.message || `${res.status}`;
-      const err = new Error(typeof message === 'string' ? message : JSON.stringify(message));
+      let errorBody: any = {};
+      let rawErrorText = '';
+
+      try {
+        rawErrorText = await res.text();
+        if (rawErrorText) {
+          errorBody = JSON.parse(rawErrorText);
+        }
+      } catch {
+        errorBody = { message: rawErrorText || `HTTP ${res.status}` };
+      }
+
+      const message =
+        typeof errorBody?.message === 'string'
+          ? errorBody.message
+          : typeof errorBody?.error === 'string'
+            ? errorBody.error
+            : typeof errorBody?.detail === 'string'
+              ? errorBody.detail
+              : rawErrorText || `HTTP ${res.status}`;
+
+      const err = new Error(message);
       ;(err as any).statusCode = res.status;
       ;(err as any).body = errorBody;
       throw err;

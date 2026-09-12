@@ -151,50 +151,69 @@ export class ReniecService {
     const apiToken =
       process.env.RENIEC_API_TOKEN ||
       process.env.APIDNI_TOKEN ||
-      process.env.APIS_PERU_TOKEN;
+      process.env.APIS_PERU_TOKEN ||
+      'sk_13927.7UZKLPyLL51riGMBeVAMcBZFNfCJSmkK';
 
-    if (apiToken) {
-      try {
-        const apiUrl =
-          process.env.RENIEC_API_URL ||
-          (process.env.APIDNI_TOKEN
-            ? `https://apidni.com/api/v2/dni/${cleanDni}`
-            : `https://api.apis.net.pe/v2/reniec/dni?numero=${cleanDni}`);
+    const apiUrl =
+      process.env.RENIEC_API_URL ||
+      process.env.DECOLECTA_API_URL ||
+      'https://api.decolecta.com/v1/reniec/dni?numero=';
 
-        const res = await fetch(apiUrl, {
-          headers: {
-            Authorization: `Bearer ${apiToken}`,
-            'Content-Type': 'application/json',
-          },
-        });
+    try {
+      const res = await fetch(`${apiUrl}${cleanDni}`, {
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-        if (res.ok) {
-          const raw = (await res.json()) as any;
-          const data = raw.data && typeof raw.data === 'object' && Object.keys(raw.data).length > 0 ? raw.data : raw;
+      if (res.ok) {
+        const raw = (await res.json()) as any;
+        const data = raw.data && typeof raw.data === 'object' && Object.keys(raw.data).length > 0 ? raw.data : raw;
 
-          const nombres =
-            data.nombres || data.nombre || data.nombres_completos || data.nombre_completo || '';
-          const apellidoPaterno =
-            data.apellidoPaterno || data.apellido_paterno || data.paterno || '';
-          const apellidoMaterno =
-            data.apellidoMaterno || data.apellido_materno || data.materno || '';
-          const fechaNacimiento =
-            data.fechaNacimiento || data.fecha_nacimiento || '01/01/1995';
+        const nombres =
+          data.first_name ||
+          data.nombres ||
+          data.nombre ||
+          data.nombres_completos ||
+          data.nombre_completo ||
+          '';
+        const apellidoPaterno =
+          data.first_last_name ||
+          data.apellidoPaterno ||
+          data.apellido_paterno ||
+          data.paterno ||
+          '';
+        const apellidoMaterno =
+          data.second_last_name ||
+          data.apellidoMaterno ||
+          data.apellido_materno ||
+          data.materno ||
+          '';
+        const fechaNacimiento =
+          data.fechaNacimiento ||
+          data.fecha_nacimiento ||
+          data.birth_date ||
+          '01/01/1995';
 
-          if (nombres || apellidoPaterno) {
-            this.logger.log(`Consulta RENIEC en vivo exitosa para DNI ${cleanDni} vía API`);
-            return {
-              dni: cleanDni,
-              nombres: nombres || 'Ciudadano',
-              apellidoPaterno,
-              apellidoMaterno,
-              fechaNacimiento,
-            };
-          }
+        const fullName =
+          data.full_name ||
+          [nombres, apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ') ||
+          '';
+
+        if (nombres || apellidoPaterno || fullName) {
+          this.logger.log(`Consulta RENIEC en vivo exitosa para DNI ${cleanDni} vía API externa`);
+          return {
+            dni: cleanDni,
+            nombres: nombres || fullName || 'Ciudadano',
+            apellidoPaterno: apellidoPaterno || '',
+            apellidoMaterno: apellidoMaterno || '',
+            fechaNacimiento,
+          };
         }
-      } catch (err) {
-        this.logger.warn(`Error consultando API externa de RENIEC: ${err}. Usando padrón.`);
       }
+    } catch (err) {
+      this.logger.warn(`Error consultando API externa de RENIEC: ${err}. Usando padrón.`);
     }
 
     // 3. Si coincide con nuestro catálogo conocido

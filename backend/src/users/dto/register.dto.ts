@@ -40,7 +40,7 @@ export class RegisterDto {
     description: 'Número de celular en Perú (9 dígitos que inician en 9)',
   })
   @IsNotEmpty({ message: 'El número de celular es obligatorio' })
-  @Matches(/^9\d{8}$/, {
+  @Matches(/^(\+51)?9\d{8}$/, {
     message: 'El teléfono debe ser un celular peruano válido de 9 dígitos comenzando con 9',
   })
   phone: string;
