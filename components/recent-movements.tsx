@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
-import { getMovements, type Movement } from "@/lib/mock-api"
+import { getMovementsApi } from "@/lib/api-client"
+import type { Movement } from "@/lib/mock-api"
 
 const CATEGORY_STYLES: Record<string, string> = {
   Ingreso: "bg-brand-positive/15 text-brand-positive",
@@ -22,11 +23,17 @@ export function RecentMovements() {
   useEffect(() => {
     if (!session) return
     let active = true
-    getMovements(session.token).then((data) => {
-      if (!active) return
-      setMovements(data)
-      setLoading(false)
-    })
+    getMovementsApi(session.token)
+      .then((data) => {
+        if (!active) return
+        setMovements(data)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error("Error cargando movimientos:", err)
+        if (!active) return
+        setLoading(false)
+      })
     return () => {
       active = false
     }

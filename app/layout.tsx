@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'BankHub · Panel de cuentas',
+  title: 'Peya · Panel de cuentas',
   description: 'Dashboard financiero: resumen de cuentas, movimientos y notificaciones',
   generator: 'v0.app',
   icons: {

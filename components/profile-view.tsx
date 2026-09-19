@@ -51,8 +51,8 @@ function SectionCard({
 
 export function ProfileView() {
   const { session } = useAuth()
-  const fullName = session?.user.name ?? "Usuario BankHub"
-  const email = session?.user.email ?? "usuario@bankhub.com"
+  const fullName = session?.user.name ?? "Usuario Peya"
+  const email = session?.user.email ?? "usuario@peya.com"
   const initials = getInitials(fullName)
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
   const [emailNotifications, setEmailNotifications] = useState(true)

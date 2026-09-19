@@ -4,10 +4,10 @@ import { useState } from "react"
 import { Check, AlertTriangle, ArrowLeftRight, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
+import { createTransferApi } from "@/lib/api-client"
 import {
   SOURCE_ACCOUNTS,
   TRANSACTION_TYPES,
-  createTransfer,
   type TransferResult,
 } from "@/lib/mock-api"
 
@@ -71,9 +71,7 @@ export function TransferFlow() {
   async function handleTransfer() {
     setSubmitting(true)
     try {
-      // Llamada al microservicio transaction-service. La persistencia real
-      // (débito/crédito atómico) ocurre en el backend.
-      const res = await createTransfer(session?.token ?? "", {
+      const res = await createTransferApi(session?.token ?? "", {
         transactionType: form.transactionType,
         sourceAccountId: form.sourceAccountId,
         destinationAccount: form.destinationAccount.trim(),

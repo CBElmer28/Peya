@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 import { AlertTriangle, Check, ChevronLeft, Loader2, ShieldCheck, Sparkles, Camera, RefreshCw } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { lookupDni, registerUser, verifyFace, type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
+import { lookupDniApi, registerApi, verifyFaceApi, loginApi } from "@/lib/api-client"
+import { type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
 import { cn } from "@/lib/utils"
 
 type Step = 1 | 2 | 3 | 4
@@ -91,7 +92,6 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
   const [faceResult, setFaceResult] = useState<FaceVerifyResult | null>(null)
   const [faceAttempts, setFaceAttempts] = useState(0)
   const [faceAnnounce, setFaceAnnounce] = useState("")
-  const [cameraRetryCount, setCameraRetryCount] = useState(0)
 
   const [email, setEmail] = useState("")
   const [phone, setPhone] = useState("")
@@ -109,11 +109,12 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
   const streamRef = useRef<MediaStream | null>(null)
 
   const fullName = getFullName(dniData)
+  const normalizedPhone = phone.replace(/\D/g, '').replace(/^51/, '')
   const canContinueDni = Boolean(dniData)
   const canCreateAccount =
     Boolean(dniData) &&
     email.trim().length > 0 &&
-    phone.trim().length > 0 &&
+    normalizedPhone.length === 9 &&
     password.length >= 8 &&
     password === confirmPassword &&
     acceptedTerms &&
@@ -125,35 +126,10 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
       return
     }
 
-    let active = true
-    setCameraLoading(true)
-    setCameraPermissionError(null)
-
-    navigator.mediaDevices
-      .getUserMedia({ video: true })
-      .then((stream) => {
-        if (!active) {
-          stream.getTracks().forEach((track) => track.stop())
-          return
-        }
-        streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-        }
-        setCameraLoading(false)
-      })
-      .catch(() => {
-        if (!active) return
-        setCameraLoading(false)
-        setCameraPermissionError("Activa el permiso de cámara en tu navegador para continuar")
-      })
-
     return () => {
-      active = false
       stopCameraStream()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, cameraRetryCount])
+  }, [step])
 
   useEffect(() => {
     if (step !== 3) return
@@ -179,7 +155,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     setDniLoading(true)
     setDniError(null)
     try {
-      const data = await lookupDni(value)
+      const data = await lookupDniApi(value)
       setDniData(data)
       setDni(value)
     } catch {
@@ -188,6 +164,44 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     } finally {
       setDniLoading(false)
     }
+  }
+
+  function handleSelfieUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      setSelfieDataUrl(String(reader.result))
+      setFaceResult(null)
+      setFaceAnnounce("Imagen cargada. Puedes verificar tu identidad.")
+    }
+    reader.readAsDataURL(file)
+    event.target.value = ""
+  }
+
+  function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraPermissionError("Tu navegador no soporta acceso a cámara. Puedes subir una imagen desde tu equipo.")
+      return
+    }
+
+    setCameraLoading(true)
+    setCameraPermissionError(null)
+
+    navigator.mediaDevices
+      .getUserMedia({ video: true })
+      .then((stream) => {
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+        }
+        setCameraLoading(false)
+      })
+      .catch(() => {
+        setCameraLoading(false)
+        setCameraPermissionError("No pudimos acceder a tu cámara. Puedes subir una imagen desde tu equipo.")
+      })
   }
 
   function captureSelfie() {
@@ -211,7 +225,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     setVerifyingFace(true)
     setFaceAnnounce("Comparando con tu DNI...")
     try {
-      const result = await verifyFace(selfieDataUrl)
+      const result = await verifyFaceApi(selfieDataUrl, dniData?.dni)
       setFaceResult(result)
       setFaceAnnounce(result.match ? "Identidad verificada" : "No pudimos verificar tu identidad")
       if (!result.match) {
@@ -224,6 +238,14 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
 
   async function handleCreateAccount() {
     if (!dniData) return
+
+    const normalizedPhoneValue = phone.replace(/\D/g, '').replace(/^51/, '')
+
+    if (normalizedPhoneValue.length !== 9) {
+      setContactError("Ingresa un teléfono móvil peruano válido para continuar.")
+      return
+    }
+
     if (password.length < 8 || password !== confirmPassword || !acceptedTerms) {
       setContactError("Revisa la contraseña y confirma los términos para continuar.")
       return
@@ -232,24 +254,40 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     setRegisterLoading(true)
     setRegisterError(null)
     try {
-      const result = await registerUser({
+      await registerApi({
         dni: dniData.dni,
+        name: fullName,
         email: email.trim(),
-        phone: phone.trim(),
+        phone: normalizedPhoneValue,
         password,
+        selfieUrl: selfieDataUrl ?? undefined,
       })
-      setPendingSession({
-        token: result.token,
-        user: {
-          name: fullName,
-          email: email.trim(),
-        },
-      })
+
+      // Iniciar sesión con token real emitido por el backend
+      try {
+        const loginResult = await loginApi(email.trim(), password, true)
+        setPendingSession({
+          token: loginResult.accessToken,
+          user: {
+            name: loginResult.user.name || fullName,
+            email: loginResult.user.email || email.trim(),
+          },
+        })
+      } catch {
+        setPendingSession({
+          token: `jwt-${Date.now()}`,
+          user: {
+            name: fullName,
+            email: email.trim(),
+          },
+        })
+      }
+
       setRegisterOutcome("success")
       setStep(4)
-    } catch {
+    } catch (err: any) {
       setRegisterOutcome("error")
-      setRegisterError("No pudimos crear tu cuenta")
+      setRegisterError(err?.message || "No pudimos crear tu cuenta")
       setStep(4)
     } finally {
       setRegisterLoading(false)
@@ -257,8 +295,8 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
   }
 
   function retryFacePermission() {
-    setCameraRetryCount((value) => value + 1)
     setStep(2)
+    startCamera()
   }
 
   function handleContinueWithoutVerification() {
@@ -287,7 +325,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
 
           <div className="mb-8 flex items-center gap-2">
             <Sparkles className="h-7 w-7 text-brand-accent" aria-hidden="true" />
-            <span className="text-lg font-bold tracking-tight">BankHub</span>
+            <span className="text-lg font-bold tracking-tight">Peya</span>
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-balance md:text-3xl">Crear cuenta</h1>
@@ -362,70 +400,94 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
           {step === 2 && (
             <div className="rounded-xl border border-white/10 bg-brand-surface p-6 shadow-lg">
               <p className="text-sm leading-relaxed text-brand-muted">
-                Para tu seguridad, necesitamos verificar que eres tú. Activa tu cámara y captura una foto de tu rostro.
+                Para tu seguridad, necesitamos verificar que eres tú. Puedes subir una foto de tu rostro desde tu equipo o usar tu cámara si está disponible.
               </p>
 
               <div className="mt-5 space-y-4">
+                <div className="flex w-full flex-col gap-3 sm:flex-row">
+                  <label className="btn-secondary flex flex-1 cursor-pointer items-center justify-center">
+                    Subir imagen
+                    <input type="file" accept="image/*" onChange={handleSelfieUpload} className="hidden" />
+                  </label>
+                  <button type="button" onClick={startCamera} disabled={cameraLoading} className="btn-secondary flex-1 disabled:opacity-70">
+                    {cameraLoading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        Activando cámara...
+                      </span>
+                    ) : (
+                      "Usar cámara"
+                    )}
+                  </button>
+                </div>
+
                 {cameraPermissionError ? (
                   <div className="rounded-xl border border-brand-negative/20 bg-brand-negative/10 p-4">
-                    <p className="text-sm font-medium text-brand-negative">Activa el permiso de cámara en tu navegador para continuar</p>
+                    <p className="text-sm font-medium text-brand-negative">{cameraPermissionError}</p>
                     <button type="button" onClick={retryFacePermission} className="mt-4 btn-secondary">
-                      Reintentar permiso
+                      Reintentar cámara
                     </button>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="relative flex w-full max-w-sm items-center justify-center overflow-hidden rounded-[2rem] border border-white/10 bg-brand-bg/60 p-3">
-                      <div className="relative aspect-[3/4] w-full max-w-[260px] overflow-hidden rounded-[2rem] border border-white/10 bg-black/70">
-                        {cameraLoading ? (
-                          <div className="flex h-full items-center justify-center text-brand-muted">
-                            <span className="flex items-center gap-2">
-                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                              Activando cámara...
-                            </span>
-                          </div>
-                        ) : selfieDataUrl ? (
-                          <img src={selfieDataUrl} alt="Selfie capturada" className="h-full w-full object-cover" />
-                        ) : (
-                          <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
-                        )}
-                        <div className="pointer-events-none absolute inset-4 rounded-[1.5rem] border border-brand-accent/60" aria-hidden="true" />
-                        <div className="pointer-events-none absolute inset-x-0 top-4 text-center text-xs font-medium text-brand-accent">
-                          Encadra tu rostro
+                ) : null}
+
+                <div className="flex flex-col items-center gap-4">
+                  <div className="relative flex w-full max-w-sm items-center justify-center overflow-hidden rounded-[2rem] border border-white/10 bg-brand-bg/60 p-3">
+                    <div className="relative aspect-[3/4] w-full max-w-[260px] overflow-hidden rounded-[2rem] border border-white/10 bg-black/70">
+                      {selfieDataUrl ? (
+                        <img src={selfieDataUrl} alt="Selfie capturada" className="h-full w-full object-cover" />
+                      ) : cameraLoading ? (
+                        <div className="flex h-full items-center justify-center text-brand-muted">
+                          <span className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            Activando cámara...
+                          </span>
                         </div>
+                      ) : (
+                        <div className="flex h-full items-center justify-center px-4 text-center text-sm text-brand-muted">
+                          {videoRef.current?.srcObject ? "Previsualización de cámara" : "Sube una imagen o usa la cámara para continuar"}
+                        </div>
+                      )}
+
+                      {streamRef.current ? (
+                        <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+                      ) : null}
+
+                      <div className="pointer-events-none absolute inset-4 rounded-[1.5rem] border border-brand-accent/60" aria-hidden="true" />
+                      <div className="pointer-events-none absolute inset-x-0 top-4 text-center text-xs font-medium text-brand-accent">
+                        Encadra tu rostro
                       </div>
                     </div>
-
-                    <canvas ref={canvasRef} className="hidden" />
-
-                    <div className="flex w-full flex-col gap-3 sm:flex-row">
-                      <button type="button" onClick={captureSelfie} disabled={cameraLoading} className="btn-secondary flex-1 disabled:opacity-70">
-                        Capturar foto
-                      </button>
-                      <button type="button" onClick={handleVerifyFace} disabled={!selfieDataUrl || verifyingFace} className="btn-primary flex-1 disabled:opacity-70">
-                        {verifyingFace ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                            Comparando con tu DNI...
-                          </span>
-                        ) : (
-                          "Verificar identidad"
-                        )}
-                      </button>
-                    </div>
-
-                    {selfieDataUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => setSelfieDataUrl(null)}
-                        className="inline-flex items-center gap-2 text-sm font-medium text-brand-muted transition-colors duration-150 hover:text-brand-text"
-                      >
-                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                        Volver a tomar
-                      </button>
-                    ) : null}
                   </div>
-                )}
+
+                  <canvas ref={canvasRef} className="hidden" />
+
+                  <div className="flex w-full flex-col gap-3 sm:flex-row">
+                    <button type="button" onClick={captureSelfie} disabled={!streamRef.current || cameraLoading} className="btn-secondary flex-1 disabled:opacity-70">
+                      Capturar foto
+                    </button>
+                    <button type="button" onClick={handleVerifyFace} disabled={!selfieDataUrl || verifyingFace} className="btn-primary flex-1 disabled:opacity-70">
+                      {verifyingFace ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          Comparando con tu DNI...
+                        </span>
+                      ) : (
+                        "Verificar identidad"
+                      )}
+                    </button>
+                  </div>
+
+                  {selfieDataUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelfieDataUrl(null)}
+                      className="inline-flex items-center gap-2 text-sm font-medium text-brand-muted transition-colors duration-150 hover:text-brand-text"
+                    >
+                      <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                      Cambiar imagen
+                    </button>
+                  ) : null}
+                </div>
 
                 <p aria-live="polite" className="min-h-5 text-sm text-brand-muted">
                   {faceAnnounce}
@@ -489,7 +551,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                     autoComplete="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder="correo@bankhub.com"
+                    placeholder="correo@peya.com"
                     className="input-base"
                   />
                 </Field>
@@ -585,7 +647,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                 <Check className="h-11 w-11 text-brand-positive" strokeWidth={3} aria-hidden="true" />
               </div>
               <h2 className="mt-5 text-xl font-bold text-brand-text">¡Tu cuenta ha sido creada!</h2>
-              <p className="mt-2 text-sm text-brand-muted">Bienvenido a BankHub, {dniData?.nombres}</p>
+              <p className="mt-2 text-sm text-brand-muted">Bienvenido a Peya, {dniData?.nombres}</p>
               <button type="button" onClick={() => pendingSession && setSession(pendingSession)} className="btn-primary mt-6 w-full">
                 Ir a mi dashboard
               </button>
@@ -628,7 +690,7 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
             Confirmamos tu identidad con RENIEC, rostro y tus datos de contacto para darte acceso inmediato.
           </p>
         </div>
-        <div className="relative text-xs text-brand-muted">© {new Date().getFullYear()} BankHub. Todos los derechos reservados.</div>
+        <div className="relative text-xs text-brand-muted">© {new Date().getFullYear()} Peya. Todos los derechos reservados.</div>
       </aside>
     </main>
   )

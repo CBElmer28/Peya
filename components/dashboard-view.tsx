@@ -12,7 +12,7 @@ import { ProfileView } from "@/components/profile-view"
 import { TransferFlow } from "@/components/transfer-flow"
 import { AdminModule } from "@/components/admin-module"
 import { useAuth } from "@/components/auth-provider"
-import { getNotifications } from "@/lib/mock-api"
+import { getNotificationsApi } from "@/lib/api-client"
 
 export function DashboardView() {
   const { session } = useAuth()
@@ -27,7 +27,7 @@ export function DashboardView() {
     }
 
     let active = true
-    getNotifications(session.token).then((items) => {
+    getNotificationsApi(session.token).then((items) => {
       if (!active) return
       setUnreadNotificationsCount(items.filter((item) => item.unread).length)
     })

@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react"
 import { Wallet, PiggyBank, TrendingUp, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { getAccounts, type Account } from "@/lib/mock-api"
+import { getAccountsApi } from "@/lib/api-client"
+import type { Account } from "@/lib/mock-api"
 
 const ICONS = { wallet: Wallet, savings: PiggyBank, investment: TrendingUp } as const
 
@@ -15,11 +16,17 @@ export function AccountSummary() {
   useEffect(() => {
     if (!session) return
     let active = true
-    getAccounts(session.token).then((data) => {
-      if (!active) return
-      setAccounts(data)
-      setLoading(false)
-    })
+    getAccountsApi(session.token)
+      .then((data) => {
+        if (!active) return
+        setAccounts(data)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error("Error cargando cuentas:", err)
+        if (!active) return
+        setLoading(false)
+      })
     return () => {
       active = false
     }

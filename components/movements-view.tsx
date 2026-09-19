@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
-import { getAccounts, getAllMovements, type Account, type Movement } from "@/lib/mock-api"
+import { getAccountsApi, getAllMovementsApi } from "@/lib/api-client"
+import type { Account, Movement } from "@/lib/mock-api"
 
 const PAGE_SIZE = 8
 
@@ -103,12 +104,18 @@ export function MovementsView() {
     if (!session) return
     let active = true
     setLoading(true)
-    Promise.all([getAccounts(session.token), getAllMovements(session.token)]).then(([nextAccounts, nextMovements]) => {
-      if (!active) return
-      setAccounts(nextAccounts)
-      setMovements(nextMovements)
-      setLoading(false)
-    })
+    Promise.all([getAccountsApi(session.token), getAllMovementsApi(session.token)])
+      .then(([nextAccounts, nextMovements]) => {
+        if (!active) return
+        setAccounts(nextAccounts)
+        setMovements(nextMovements)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error("Error cargando movimientos:", err)
+        if (!active) return
+        setLoading(false)
+      })
     return () => {
       active = false
     }
