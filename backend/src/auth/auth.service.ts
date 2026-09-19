@@ -4,11 +4,15 @@ import {
   HttpException,
   HttpStatus,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcryptjs';
+import * as nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 
 interface FailedAttemptRecord {
   attempts: number;
@@ -17,6 +21,8 @@ interface FailedAttemptRecord {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   // Mapa en memoria para SCRUM-18: Protección contra intentos fallidos
   private failedAttempts = new Map<string, FailedAttemptRecord>();
   private readonly MAX_ATTEMPTS = 5;
@@ -31,10 +37,33 @@ export class AuthService {
     { email: string; token: string; expiresAt: number; used: boolean }
   >();
 
+  private readonly smtpTransporter: Transporter | null;
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    const host = this.configService.get<string>('SMTP_HOST');
+    const port = Number(this.configService.get<number>('SMTP_PORT') ?? 587);
+    const user = this.configService.get<string>('SMTP_USER');
+    const pass = this.configService.get<string>('SMTP_PASS');
+    const secure = this.configService.get<string>('SMTP_SECURE') === 'true' || port === 465;
+
+    if (host && user && pass) {
+      this.smtpTransporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: { user, pass },
+      });
+    } else {
+      this.smtpTransporter = null;
+      this.logger.warn(
+        'SMTP no configurado. El flujo de recuperación usará modo de desarrollo con OTP visible en la respuesta.',
+      );
+    }
+  }
 
   async login(dto: LoginDto): Promise<{
     accessToken: string;
@@ -150,6 +179,30 @@ export class AuthService {
     return this.revokedTokens.has(cleanToken);
   }
 
+  private async sendPasswordResetEmail(email: string, otpCode: string): Promise<void> {
+    const sender = this.configService.get<string>('SMTP_FROM') || 'no-reply@bankhub.local';
+
+    if (!this.smtpTransporter) {
+      this.logger.warn(`OTP de recuperación para ${email}: ${otpCode}`);
+      return;
+    }
+
+    await this.smtpTransporter.sendMail({
+      from: sender,
+      to: email,
+      subject: 'BankHub - Recuperación de contraseña',
+      text: `Tu código de recuperación es: ${otpCode}. Tiene una vigencia de 15 minutos.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
+          <h2>Recuperación de contraseña</h2>
+          <p>Usa el siguiente código para restablecer tu contraseña:</p>
+          <p><strong style="font-size: 24px; letter-spacing: 4px;">${otpCode}</strong></p>
+          <p>Este código expira en 15 minutos.</p>
+        </div>
+      `,
+    });
+  }
+
   // HU4 - SCRUM-28/29: Solicitud de recuperación de contraseña por correo / DNI
   async forgotPassword(
     identifier: string,
@@ -179,6 +232,12 @@ export class AuthService {
     // Censurar correo para visualización segura (ej. d***@bankhub.com)
     const [userPart, domainPart] = user.email.split('@');
     const maskedEmail = `${userPart.charAt(0)}***@${domainPart}`;
+
+    try {
+      await this.sendPasswordResetEmail(user.email, otpCode);
+    } catch (error) {
+      this.logger.error('Error enviando email de recuperación:', error);
+    }
 
     return {
       success: true,
