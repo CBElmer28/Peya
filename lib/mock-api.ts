@@ -143,17 +143,16 @@ function delay<T>(value: T): Promise<T> {
 /**
  * auth-service · POST /auth/login
  * Valida credenciales y devuelve un token de sesión.
- * Credenciales de demostración: demo@bankhub.com / 123456
+ * Credenciales de demostración: demo@peya.com / 123456
  */
 export async function login(email: string, password: string): Promise<Session> {
   const cleanEmail = email.trim().toLowerCase()
   const matchedUser = REGISTERED_USERS_DB.find((u) => u.email.toLowerCase() === cleanEmail)
-  
-  const isDemo = cleanEmail === "demo@bankhub.com" && password === "123456"
+
+  const isDemo = cleanEmail === "demo@peya.com" && password === "123456"
   const isRegisteredValid = matchedUser && (password === "123456" || password.length >= 8)
 
   if (!isDemo && !isRegisteredValid) {
-    // Simula respuesta 401 Unauthorized del auth-service.
     await delay(null)
     throw new Error("401")
   }
@@ -169,10 +168,10 @@ export async function login(email: string, password: string): Promise<Session> {
 export async function getCurrentUser(token: string): Promise<{ id: string; name: string; email: string; role: string }> {
   void token
   return delay({
-    id: 'usr-1',
-    name: 'Ana Martínez',
-    email: 'demo@bankhub.com',
-    role: 'admin',
+    id: "usr-1",
+    name: "Ana Martínez",
+    email: "demo@peya.com",
+    role: "admin",
   })
 }
 

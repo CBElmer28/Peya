@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { AlertTriangle, Check, ChevronLeft, Loader2, ShieldCheck, Sparkles, Camera, RefreshCw } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { lookupDniApi, registerApi, verifyFaceApi, loginApi } from "@/lib/api-client"
+import { lookupDniApi, loginApi, registerApi, verifyFaceApi } from "@/lib/api-client"
 import { type DniData, type FaceVerifyResult, type Session } from "@/lib/mock-api"
 import { cn } from "@/lib/utils"
 
@@ -263,7 +263,6 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
         selfieUrl: selfieDataUrl ?? undefined,
       })
 
-      // Iniciar sesión con token real emitido por el backend
       try {
         const loginResult = await loginApi(email.trim(), password, true)
         setPendingSession({

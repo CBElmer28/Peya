@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
-import { loginApi } from "@/lib/api-client"
+import { loginApi, logoutApi } from "@/lib/api-client"
 import type { Session } from "@/lib/mock-api"
 
 type AuthContextValue = {
@@ -18,7 +18,6 @@ const STORAGE_KEY = "bankhub_session"
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<Session | null>(null)
 
-  // Carga inicial y recuperación de sesión desde almacenamiento local
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY) || sessionStorage.getItem(STORAGE_KEY)
@@ -35,20 +34,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setSession = useCallback((newSession: Session | null) => {
     setSessionState(newSession)
-    if (newSession) {
-      try {
+    try {
+      if (newSession) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(newSession))
-      } catch {}
-    } else {
-      try {
+        sessionStorage.removeItem(STORAGE_KEY)
+      } else {
         localStorage.removeItem(STORAGE_KEY)
         sessionStorage.removeItem(STORAGE_KEY)
-      } catch {}
-    }
+      }
+    } catch {}
   }, [])
 
   const signIn = useCallback(async (email: string, password: string, rememberMe = true) => {
-    // Petición HTTP al Backend NestJS (POST /api/auth/login)
     const result = await loginApi(email, password, rememberMe)
     const sessionData: Session = {
       token: result.accessToken,
@@ -57,28 +54,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: result.user.email,
       },
     }
+
     setSessionState(sessionData)
+
     try {
       if (rememberMe) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData))
+        sessionStorage.removeItem(STORAGE_KEY)
       } else {
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData))
+        localStorage.removeItem(STORAGE_KEY)
       }
     } catch {}
-  }, [])
+  }, [setSession])
 
-  const signOut = useCallback(async () => {
-    try {
-      if (session?.token) {
-        await logoutApi(session.token)
-      }
-    } catch {}
-    setSessionState(null)
-    try {
-      localStorage.removeItem(STORAGE_KEY)
-      sessionStorage.removeItem(STORAGE_KEY)
-    } catch {}
-  }, [session?.token])
+  const signOut = useCallback(() => {
+    void (async () => {
+      try {
+        if (session?.token) {
+          await logoutApi(session.token)
+        }
+      } catch {}
+      setSession(null)
+    })()
+  }, [session?.token, setSession])
 
   const value = useMemo<AuthContextValue>(
     () => ({ session, isAuthenticated: session !== null, signIn, setSession, signOut }),

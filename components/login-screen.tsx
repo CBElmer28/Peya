@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, type FormEvent } from "react"
-import { Landmark, Loader2, ShieldCheck, Lock, Mail, KeyRound } from "lucide-react"
+import { Landmark, Loader2, ShieldCheck, Lock, Mail } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { RegisterFlow } from "@/components/register-flow"
 import { ForgotPasswordFlow } from "@/components/forgot-password-flow"
@@ -40,7 +40,6 @@ export function LoginScreen() {
 
   return (
     <main className="flex min-h-screen bg-brand-bg text-brand-text">
-      {/* Columna izquierda: formulario */}
       <div className="flex w-full flex-col justify-center px-6 py-12 md:w-1/2 md:px-12 lg:px-20">
         <div className="mx-auto w-full max-w-md">
           <div className="mb-8 flex items-center gap-2">
@@ -99,7 +98,7 @@ export function LoginScreen() {
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-xs text-brand-muted cursor-pointer select-none">
+            <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-brand-muted">
               <input
                 type="checkbox"
                 checked={rememberMe}
@@ -142,7 +141,6 @@ export function LoginScreen() {
         </div>
       </div>
 
-      {/* Columna derecha: espacio corporativo / marca */}
       <aside className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-brand-surface p-12 md:flex">
         <div className="absolute inset-0 bg-gradient-to-br from-brand-surface to-brand-bg" aria-hidden="true" />
         <div className="relative flex items-center gap-2 text-brand-accent">

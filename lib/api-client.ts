@@ -1,286 +1,279 @@
 // Cliente API HTTP para comunicar el Frontend de Next.js con el Backend NestJS (http://localhost:4000/api).
 // Incluye fallback automático a la capa local para garantizar resiliencia en desarrollo.
 
-import * as mockApi from './mock-api';
+import * as mockApi from "./mock-api"
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api"
 
-async function fetchWithFallback<T>(
-  endpoint: string,
-  options: RequestInit,
-  fallbackFn: () => Promise<T>,
-): Promise<T> {
+async function fetchWithFallback<T>(endpoint: string, options: RequestInit, fallbackFn: () => Promise<T>): Promise<T> {
   try {
     const res = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         ...(options.headers || {}),
       },
-    });
+    })
 
     if (!res.ok) {
-      let errorBody: any = {};
-      let rawErrorText = '';
+      let errorBody: any = {}
+      let rawErrorText = ""
 
       try {
-        rawErrorText = await res.text();
+        rawErrorText = await res.text()
         if (rawErrorText) {
-          errorBody = JSON.parse(rawErrorText);
+          errorBody = JSON.parse(rawErrorText)
         }
       } catch {
-        errorBody = { message: rawErrorText || `HTTP ${res.status}` };
+        errorBody = { message: rawErrorText || `HTTP ${res.status}` }
       }
 
       const message =
-        typeof errorBody?.message === 'string'
+        typeof errorBody?.message === "string"
           ? errorBody.message
-          : typeof errorBody?.error === 'string'
+          : typeof errorBody?.error === "string"
             ? errorBody.error
-            : typeof errorBody?.detail === 'string'
+            : typeof errorBody?.detail === "string"
               ? errorBody.detail
-              : rawErrorText || `HTTP ${res.status}`;
+              : rawErrorText || `HTTP ${res.status}`
 
-      const err = new Error(message);
-      ;(err as any).statusCode = res.status;
-      ;(err as any).body = errorBody;
-      throw err;
+      const err = new Error(message) as Error & { statusCode?: number; body?: unknown }
+      err.statusCode = res.status
+      err.body = errorBody
+      throw err
     }
 
-    return (await res.json()) as T;
+    const text = await res.text()
+    if (!text) return undefined as T
+    return JSON.parse(text) as T
   } catch (err: any) {
-    // Si es un error de red (backend no levantado o CORS), usamos el fallback
-    if (err.name === 'TypeError' && err.message.includes('fetch')) {
-      console.warn(`[BankHub API] Backend offline en ${BASE_URL}${endpoint}. Usando fallback.`);
-      return fallbackFn();
+    if (err?.name === "TypeError" && String(err?.message || "").includes("fetch")) {
+      console.warn(`[Peya API] Backend offline en ${BASE_URL}${endpoint}. Usando fallback.`)
+      return fallbackFn()
     }
-    // Si el backend respondió con un código de error (ej: 401, 409, 422), propagar el error real
-    throw err;
+    throw err
   }
 }
 
 export async function getNotificationsApi(token?: string): Promise<mockApi.AppNotification[]> {
   return fetchWithFallback(
-    '/accounts/notifications',
+    "/accounts/notifications",
     {
-      method: 'GET',
+      method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
-    () => mockApi.getNotifications(token || ''),
-  );
+    () => mockApi.getNotifications(token || ""),
+  )
 }
 
 export async function getMovementsApi(token?: string): Promise<mockApi.Movement[]> {
   return fetchWithFallback(
-    '/accounts/movements',
+    "/accounts/movements",
     {
-      method: 'GET',
+      method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
-    () => mockApi.getMovements(token || ''),
-  );
+    () => mockApi.getMovements(token || ""),
+  )
 }
 
 export async function getAllMovementsApi(token?: string): Promise<mockApi.Movement[]> {
   return fetchWithFallback(
-    '/accounts/movements',
+    "/accounts/movements",
     {
-      method: 'GET',
+      method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
-    () => mockApi.getAllMovements(token || ''),
-  );
+    () => mockApi.getAllMovements(token || ""),
+  )
 }
 
 export async function loginApi(email: string, password: string, rememberMe = true) {
   return fetchWithFallback(
-    '/auth/login',
+    "/auth/login",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ email, password, rememberMe }),
     },
     async () => {
-      const res = await mockApi.login(email, password);
+      const res = await mockApi.login(email, password)
       return {
         accessToken: res.token,
-        tokenType: 'Bearer',
-        user: { id: 'usr-1', ...res.user, role: 'admin' },
-      };
+        tokenType: "Bearer",
+        user: { id: "usr-1", ...res.user, role: "admin" },
+      }
     },
-  );
+  )
 }
 
 export async function registerApi(payload: {
-  dni: string;
-  name?: string;
-  email: string;
-  phone: string;
-  password: string;
-  selfieUrl?: string;
+  dni: string
+  name?: string
+  email: string
+  phone: string
+  password: string
+  selfieUrl?: string
 }) {
   return fetchWithFallback(
-    '/users/register',
+    "/users/register",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
     },
     async () => {
-      const res = await mockApi.registerUser(payload);
-      return { userId: res.userId, email: payload.email, name: payload.name || 'Nuevo Usuario' };
+      const res = await mockApi.registerUser({
+        dni: payload.dni,
+        email: payload.email,
+        phone: payload.phone,
+        password: payload.password,
+      })
+      return { userId: res.userId, email: payload.email, name: payload.name || "Nuevo Usuario" }
     },
-  );
+  )
 }
 
 export async function lookupDniApi(dni: string) {
-  return fetchWithFallback(
-    `/reniec/dni/${encodeURIComponent(dni)}`,
-    { method: 'GET' },
-    () => mockApi.lookupDni(dni),
-  );
+  return fetchWithFallback(`/reniec/dni/${encodeURIComponent(dni)}`, { method: "GET" }, () => mockApi.lookupDni(dni))
 }
 
 export async function verifyFaceApi(selfieDataUrl: string, dni?: string) {
   return fetchWithFallback(
-    '/kyc/verify-face',
+    "/kyc/verify-face",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ selfieDataUrl, dni }),
     },
     () => mockApi.verifyFace(selfieDataUrl),
-  );
+  )
 }
 
 export async function checkDniApi(dni: string) {
   return fetchWithFallback(
     `/users/check-dni?dni=${encodeURIComponent(dni)}`,
-    { method: 'GET' },
+    { method: "GET" },
     async () => ({ exists: mockApi.isDniRegistered(dni) }),
-  );
+  )
 }
 
 export async function checkEmailApi(email: string) {
   return fetchWithFallback(
     `/users/check-email?email=${encodeURIComponent(email)}`,
-    { method: 'GET' },
+    { method: "GET" },
     async () => ({ exists: mockApi.isEmailRegistered(email) }),
-  );
+  )
 }
 
 export async function getAccountsApi(token?: string): Promise<mockApi.Account[]> {
   return fetchWithFallback(
-    '/accounts',
+    "/accounts",
     {
-      method: 'GET',
+      method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
-    () => mockApi.getAccounts(token || ''),
-  );
+    () => mockApi.getAccounts(token || ""),
+  )
 }
 
 export async function createAccountApi(
   token: string,
-  payload: { type: 'savings' | 'checking' | 'usd'; currency: 'PEN' | 'USD' },
+  payload: { type: "savings" | "checking" | "usd"; currency: "PEN" | "USD" },
 ): Promise<mockApi.Account> {
   return fetchWithFallback(
-    '/accounts',
+    "/accounts",
     {
-      method: 'POST',
+      method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: JSON.stringify(payload),
     },
     () => mockApi.createAccount(token, payload),
-  );
+  )
 }
 
 export async function logoutApi(token?: string) {
   return fetchWithFallback(
-    '/auth/logout',
+    "/auth/logout",
     {
-      method: 'POST',
+      method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
-    async () => ({ success: true, message: 'Sesión cerrada.' }),
-  );
+    async () => ({ success: true, message: "Sesión cerrada." }),
+  )
 }
 
 export async function getProfileApi(token: string) {
   return fetchWithFallback(
-    '/auth/profile',
+    "/auth/profile",
     {
-      method: 'GET',
+      method: "GET",
       headers: { Authorization: `Bearer ${token}` },
     },
     async () => mockApi.getCurrentUser(token),
-  );
+  )
 }
 
 export async function forgotPasswordApi(identifier: string) {
   return fetchWithFallback(
-    '/auth/forgot-password',
+    "/auth/forgot-password",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ identifier }),
     },
     async () => ({
       success: true,
-      message: 'Se ha enviado un código de recuperación a tu correo.',
+      message: "Se ha enviado un código de recuperación a tu correo.",
     }),
-  );
+  )
 }
 
 export async function verifyResetTokenApi(email: string, token: string) {
   return fetchWithFallback(
-    '/auth/verify-reset-token',
+    "/auth/verify-reset-token",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ email, token }),
     },
-    async () => ({ valid: true, message: 'Código verificado.' }),
-  );
+    async () => ({ valid: true, message: "Código verificado." }),
+  )
 }
 
 export async function resetPasswordApi(email: string, token: string, newPassword: string) {
   return fetchWithFallback(
-    '/auth/reset-password',
+    "/auth/reset-password",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ email, token, newPassword }),
     },
     async () => ({
       success: true,
-      message: 'Contraseña actualizada correctamente.',
+      message: "Contraseña actualizada correctamente.",
     }),
-  );
+  )
 }
 
-export async function createTransferApi(
-  token: string,
-  payload: mockApi.TransferPayload,
-  idempotencyKey?: string,
-) {
+export async function createTransferApi(token: string, payload: mockApi.TransferPayload, idempotencyKey?: string) {
   return fetchWithFallback(
-    '/transactions',
+    "/transactions",
     {
-      method: 'POST',
+      method: "POST",
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: JSON.stringify(payload),
     },
     () => mockApi.createTransfer(token, payload),
-  );
+  )
 }
 
 export async function getClientsApi(token?: string): Promise<mockApi.Client[]> {
   return fetchWithFallback(
-    '/users',
+    "/users",
     {
-      method: 'GET',
+      method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
-    () => mockApi.getClients(token || ''),
-  );
+    () => mockApi.getClients(token || ""),
+  )
 }
 
 export async function createClientApi(
@@ -288,16 +281,14 @@ export async function createClientApi(
   payload: { name: string; email: string; role: mockApi.ClientRole },
 ): Promise<mockApi.Client> {
   return fetchWithFallback(
-    '/users',
+    "/users",
     {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload),
     },
     () => mockApi.createClient(token, payload),
-  );
+  )
 }
 
 export async function updateClientApi(
@@ -308,47 +299,44 @@ export async function updateClientApi(
   return fetchWithFallback(
     `/users/${encodeURIComponent(clientId)}`,
     {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload),
     },
     () => mockApi.updateClient(token, clientId, payload),
-  );
+  )
 }
 
 export async function deleteClientApi(token: string, clientId: string): Promise<{ success?: boolean; ok?: boolean }> {
   return fetchWithFallback(
     `/users/${encodeURIComponent(clientId)}`,
     {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
     },
     () => mockApi.deleteClient(token, clientId),
-  );
+  )
 }
 
 export async function getAdminMetricsApi(token?: string): Promise<mockApi.AdminMetric[]> {
   return fetchWithFallback(
-    '/admin/metrics',
+    "/admin/metrics",
     {
-      method: 'GET',
+      method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
-    () => mockApi.getAdminMetrics(token || ''),
-  );
+    () => mockApi.getAdminMetrics(token || ""),
+  )
 }
 
 export async function getSupervisedAccountsApi(token?: string): Promise<mockApi.SupervisedAccount[]> {
   return fetchWithFallback(
-    '/admin/accounts',
+    "/admin/accounts",
     {
-      method: 'GET',
+      method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
-    () => mockApi.getSupervisedAccounts(token || ''),
-  );
+    () => mockApi.getSupervisedAccounts(token || ""),
+  )
 }
+
