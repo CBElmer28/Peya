@@ -1,0 +1,5 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/v1_esquema_base.yaml
+  - include:
+      file: db/changelog/v2_sistema_auditoria.yaml
