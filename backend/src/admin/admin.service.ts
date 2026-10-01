@@ -30,7 +30,7 @@ export class AdminService {
   async getMetrics(): Promise<AdminMetric[]> {
     const users = await this.usersService.findAll();
     const activeClients = users.filter((u) => u.status === 'active' && u.role === 'client');
-    const accounts = await this.accountsService.getAccounts();
+    const accountsCount = await this.accountsService.countAccounts();
     const totalClientsCount = users.length;
 
     return [
@@ -44,7 +44,7 @@ export class AdminService {
       {
         id: 'm2',
         label: 'Cuentas creadas',
-        value: (accounts.length + totalClientsCount * 2).toLocaleString('es-PE'),
+        value: (accountsCount + totalClientsCount * 2).toLocaleString('es-PE'),
         growth: '+3.1%',
         trend: 'up',
       },
@@ -60,7 +60,6 @@ export class AdminService {
 
   async getSupervisedAccounts(): Promise<SupervisedAccount[]> {
     const users = await this.usersService.findAll();
-    const accounts = await this.accountsService.getAccounts();
 
     // Generar vista supervisada a partir de los clientes y cuentas reales del sistema
     const supervised: SupervisedAccount[] = [];

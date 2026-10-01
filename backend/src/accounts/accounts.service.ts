@@ -1,6 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { randomInt } from 'crypto';
 import { CreateAccountDto } from './dto/create-account.dto';
+import { PrismaService, Tx } from '../prisma/prisma.service';
+import { businessError } from '../common/business-error';
+import { maskCci } from '../common/masking';
+import { formatMoney } from '../common/money';
+import { limits } from '../common/config';
+import {
+  beginIdempotent,
+  completeIdempotent,
+  hashRequest,
+  requireIdempotencyKey,
+} from '../common/idempotency';
+import { AuthUser } from '../auth/decorators/current-user.decorator';
 
+/** DTO del dashboard (HU06). Nunca incluye el CCI completo ni datos de otros clientes. */
 export interface Account {
   id: string;
   label: string;
@@ -11,8 +25,11 @@ export interface Account {
   subtitleDetail: string;
   icon: 'wallet' | 'savings' | 'investment';
   currency: 'PEN' | 'USD';
+  maskedNumber: string;
+  /** Compatibilidad con el contrato previo: ahora enmascarado (****1234). */
   cci: string;
   status: 'active' | 'blocked';
+  openedAt: string;
   trendLabel: string;
   trendDirection: 'up' | 'down';
 }
@@ -35,94 +52,51 @@ export interface AppNotification {
   type: 'transfer' | 'login' | 'document' | 'payment' | 'alert' | 'deposit';
 }
 
+interface CuentaRow {
+  id: string;
+  codigo: string;
+  nombre: string;
+  descripcion: string | null;
+  moneda: string;
+  cci: string;
+  saldo: any;
+  estado_cuenta: string;
+  fecha_apertura: Date;
+}
+
+const SUBTITLE: Record<string, string> = {
+  savings: 'Interés anual: 3.5% TEA',
+  checking: 'Sin comisión de mantenimiento',
+  usd: 'TC referencial: S/. 3.78',
+};
+const ICON: Record<string, Account['icon']> = { savings: 'savings', checking: 'wallet', usd: 'investment' };
+
+export function toAccountDto(r: CuentaRow): Account {
+  return {
+    id: r.id,
+    label: r.nombre,
+    type: r.codigo as Account['type'],
+    balance: formatMoney(r.saldo, r.moneda),
+    numericBalance: Number(r.saldo),
+    detail: r.descripcion ?? '',
+    subtitleDetail: SUBTITLE[r.codigo] ?? '',
+    icon: ICON[r.codigo] ?? 'wallet',
+    currency: r.moneda as Account['currency'],
+    maskedNumber: maskCci(r.cci),
+    cci: maskCci(r.cci),
+    status: r.estado_cuenta === 'ACTIVA' ? 'active' : 'blocked',
+    openedAt: r.fecha_apertura.toISOString(),
+    trendLabel: '',
+    trendDirection: 'up',
+  };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (v: string): boolean => UUID_RE.test(v);
+
 @Injectable()
 export class AccountsService {
-  private accounts: Account[] = [
-    {
-      id: 'src-1',
-      label: 'Cuenta corriente',
-      type: 'checking',
-      balance: 'S/. 12,480.50',
-      numericBalance: 12480.5,
-      detail: 'Disponible para uso inmediato',
-      subtitleDetail: 'Sin comisión de mantenimiento',
-      icon: 'wallet',
-      currency: 'PEN',
-      cci: '191-3001234567-89',
-      status: 'active',
-      trendLabel: '+4.2% respecto al mes pasado',
-      trendDirection: 'up',
-    },
-    {
-      id: 'src-2',
-      label: 'Ahorros',
-      type: 'savings',
-      balance: 'S/. 34,120.00',
-      numericBalance: 34120.0,
-      detail: 'Meta anual · 68% alcanzado',
-      subtitleDetail: 'Interés anual: 3.5% TEA',
-      icon: 'savings',
-      currency: 'PEN',
-      cci: '191-3009876543-21',
-      status: 'active',
-      trendLabel: '+1.8% respecto al mes pasado',
-      trendDirection: 'up',
-    },
-    {
-      id: 'src-3',
-      label: 'Cuenta en dólares',
-      type: 'usd',
-      balance: 'USD 8,905.75',
-      numericBalance: 8905.75,
-      detail: 'Portafolio diversificado',
-      subtitleDetail: 'TC referencial: S/. 3.78',
-      icon: 'investment',
-      currency: 'USD',
-      cci: '191-3005647382-10',
-      status: 'active',
-      trendLabel: '-2.1% respecto al mes pasado',
-      trendDirection: 'down',
-    },
-  ];
-
-  private movements: Movement[] = [
-    {
-      id: 'mov-1',
-      name: 'Nómina',
-      description: 'Depósito de nómina · Banco',
-      date: '04/09/2026',
-      category: 'Ingreso',
-      amount: '+S/. 2,450.00',
-      type: 'positive',
-    },
-    {
-      id: 'mov-2',
-      name: 'Luz del Sur',
-      description: 'Pago de servicios · Luz del Sur',
-      date: '03/09/2026',
-      category: 'Servicios',
-      amount: '-S/. 146.20',
-      type: 'negative',
-    },
-    {
-      id: 'mov-3',
-      name: 'Amazon.com.pe',
-      description: 'Compra online · Amazon.com.pe',
-      date: '02/09/2026',
-      category: 'Comercio',
-      amount: '-S/. 219.90',
-      type: 'negative',
-    },
-    {
-      id: 'mov-4',
-      name: 'Retiro BCP',
-      description: 'Retiro cajero · BCP',
-      date: '01/09/2026',
-      category: 'Retiro',
-      amount: '-S/. 400.00',
-      type: 'negative',
-    },
-  ];
+  constructor(private readonly prisma: PrismaService) {}
 
   private notifications: AppNotification[] = [
     { id: 'not-1', title: 'Pago recibido de Cliente ACME', detail: 'Hace 10 min', unread: true, type: 'payment' },
@@ -131,70 +105,108 @@ export class AccountsService {
     { id: 'not-4', title: 'Tu reporte mensual está listo', detail: 'Ayer', unread: false, type: 'document' },
   ];
 
-  async getAccounts(): Promise<Account[]> {
-    return this.accounts;
+  /** HU06: una sola consulta (JOIN a tipo_cuenta), filtrada por el cliente autenticado. */
+  async getAccounts(clienteId: string): Promise<Account[]> {
+    const rows = await this.prisma.$queryRaw<CuentaRow[]>`
+      SELECT c.id::text AS id, t.codigo, t.nombre, t.descripcion, c.moneda, c.cci, c.saldo,
+             c.estado_cuenta, c.fecha_apertura
+      FROM cuenta c
+      JOIN tipo_cuenta t ON t.id = c.id_tipo_cuenta
+      WHERE c.id_cliente = ${clienteId}::uuid AND c.estado_cuenta <> 'CERRADA'
+      ORDER BY c.fecha_apertura ASC, c.id ASC`;
+    return rows.map(toAccountDto);
   }
 
-  async getAccountById(id: string): Promise<Account> {
-    const acc = this.accounts.find((a) => a.id === id);
-    if (!acc) throw new NotFoundException('Cuenta no encontrada');
-    return acc;
+  /**
+   * HU07: ownership en la propia consulta (id + id_cliente). Cuenta inexistente y cuenta ajena
+   * responden igual (404) para no permitir enumerar cuentas de otros clientes.
+   */
+  async getOwnedAccount(clienteId: string, accountId: string): Promise<Account> {
+    if (!isUuid(accountId)) throw new NotFoundException('Cuenta no encontrada');
+    const rows = await this.prisma.$queryRaw<CuentaRow[]>`
+      SELECT c.id::text AS id, t.codigo, t.nombre, t.descripcion, c.moneda, c.cci, c.saldo,
+             c.estado_cuenta, c.fecha_apertura
+      FROM cuenta c
+      JOIN tipo_cuenta t ON t.id = c.id_tipo_cuenta
+      WHERE c.id = ${accountId}::uuid AND c.id_cliente = ${clienteId}::uuid`;
+    if (!rows.length) throw new NotFoundException('Cuenta no encontrada');
+    return toAccountDto(rows[0]);
   }
 
-  async createAccount(dto: CreateAccountDto): Promise<Account> {
-    const id = `acc-${Date.now().toString().slice(-8)}`;
-    const label =
-      dto.type === 'savings'
-        ? 'Ahorros'
-        : dto.type === 'checking'
-          ? 'Cuenta corriente'
-          : 'Cuenta en dólares';
+  /** HU05: apertura transaccional, con proteccion contra duplicados y carreras. */
+  async createAccount(user: AuthUser, dto: CreateAccountDto, idempotencyKey?: string): Promise<Account> {
+    const key = requireIdempotencyKey(idempotencyKey);
 
-    const subtitleDetail =
-      dto.type === 'savings'
-        ? 'Interés anual: 3.5% TEA'
-        : dto.type === 'checking'
-          ? 'Sin comisión de mantenimiento'
-          : 'TC referencial: S/. 3.78';
+    if (dto.type === 'usd' && dto.currency !== 'USD') {
+      throw businessError(422, 'INVALID_ACCOUNT_CURRENCY', 'La cuenta en dólares debe abrirse en moneda USD.');
+    }
 
-    const icon = dto.type === 'savings' ? 'savings' : dto.type === 'checking' ? 'wallet' : 'investment';
-    const digits = Array.from({ length: 15 }, () => Math.floor(Math.random() * 10)).join('');
-    const cci = `191-${digits.slice(0, 4)}${digits.slice(4, 8)}${digits.slice(8, 12)}-${digits.slice(12, 15)}`;
+    const hash = hashRequest({ type: dto.type, currency: dto.currency });
 
-    const newAcc: Account = {
-      id,
-      label,
-      type: dto.type,
-      balance: dto.currency === 'PEN' ? 'S/. 0.00' : 'USD 0.00',
-      numericBalance: 0,
-      detail: 'Cuenta recién abierta',
-      subtitleDetail,
-      icon,
-      currency: dto.currency,
-      cci,
-      status: 'active',
-      trendLabel: '0.0% este mes',
-      trendDirection: 'up',
-    };
+    return this.prisma.transaction(async (tx) => {
+      // Serializa aperturas concurrentes del mismo cliente (regla de maximo de cuentas sin carreras).
+      const cliente = await tx.$queryRaw<{ estado: string }[]>`
+        SELECT estado FROM cliente WHERE id = ${user.id}::uuid FOR UPDATE`;
+      if (!cliente.length || cliente[0].estado !== 'ACTIVO') {
+        throw businessError(403, 'CLIENT_NOT_ACTIVE', 'Tu usuario no está habilitado para abrir cuentas.');
+      }
 
-    this.accounts.push(newAcc);
-    return newAcc;
+      const idem = await beginIdempotent(tx, user.id, 'ACCOUNT_OPEN', key, hash);
+      if (!('id' in idem)) return idem.replay as Account;
+
+      const tipo = await tx.tipo_cuenta.findUnique({ where: { codigo: dto.type } });
+      if (!tipo) throw businessError(422, 'INVALID_ACCOUNT_TYPE', 'Tipo de cuenta no disponible.');
+
+      // El Sprint no define el origen de fondos de un deposito inicial: la cuenta se abre con 0.
+      if (Number(tipo.saldo_minimo_apertura) > 0) {
+        throw businessError(
+          422,
+          'MIN_OPENING_BALANCE_REQUIRED',
+          'Este tipo de cuenta requiere un saldo mínimo de apertura que aún no puede acreditarse.',
+        );
+      }
+
+      const [{ total }] = await tx.$queryRaw<{ total: number }[]>`
+        SELECT COUNT(*)::int AS total FROM cuenta
+        WHERE id_cliente = ${user.id}::uuid AND estado_cuenta <> 'CERRADA'`;
+      if (total >= limits.maxAccountsPerClient()) {
+        throw businessError(422, 'ACCOUNT_LIMIT_REACHED', 'Alcanzaste el máximo de cuentas permitidas.');
+      }
+
+      const created = await this.insertAccount(tx, user.id, tipo.id, dto.currency);
+      const dtoOut = toAccountDto({
+        ...created,
+        codigo: tipo.codigo,
+        nombre: tipo.nombre,
+        descripcion: 'Cuenta recién abierta',
+      });
+      await completeIdempotent(tx, idem.id, created.id, dtoOut);
+      return dtoOut;
+    });
   }
 
-  async deductBalance(accountId: string, amount: number): Promise<number> {
-    const acc = await this.getAccountById(accountId);
-    acc.numericBalance -= amount;
-    const formatted = new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2 }).format(acc.numericBalance);
-    acc.balance = acc.currency === 'PEN' ? `S/. ${formatted}` : `USD ${formatted}`;
-    return acc.numericBalance;
+  private async insertAccount(tx: Tx, clienteId: string, tipoId: number, moneda: string) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const cci = this.generateCci();
+      const rows = await tx.$queryRaw<CuentaRow[]>`
+        INSERT INTO cuenta (id_cliente, id_tipo_cuenta, moneda, cci, saldo, estado_cuenta)
+        VALUES (${clienteId}::uuid, ${tipoId}::smallint, ${moneda}, ${cci}, 0, 'ACTIVA')
+        ON CONFLICT (cci) DO NOTHING
+        RETURNING id::text AS id, ''::text AS codigo, ''::text AS nombre, NULL::text AS descripcion,
+                  moneda, cci, saldo, estado_cuenta, fecha_apertura`;
+      if (rows.length) return rows[0];
+    }
+    throw businessError(500, 'ACCOUNT_NUMBER_UNAVAILABLE', 'No se pudo generar el número de cuenta. Intenta nuevamente.');
   }
 
-  async getMovements(): Promise<Movement[]> {
-    return this.movements;
+  private generateCci(): string {
+    const body = Array.from({ length: 10 }, () => randomInt(0, 10)).join('');
+    const tail = Array.from({ length: 2 }, () => randomInt(0, 10)).join('');
+    return `191-${body}-${tail}`;
   }
 
-  async addMovement(movement: Movement): Promise<void> {
-    this.movements.unshift(movement);
+  async countAccounts(): Promise<number> {
+    return this.prisma.cuenta.count();
   }
 
   async getNotifications(): Promise<AppNotification[]> {
