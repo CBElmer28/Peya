@@ -177,17 +177,62 @@ export async function getAccountsApi(token?: string): Promise<mockApi.Account[]>
 export async function createAccountApi(
   token: string,
   payload: { type: "savings" | "checking" | "usd"; currency: "PEN" | "USD" },
+  idempotencyKey?: string,
 ): Promise<mockApi.Account> {
   return fetchWithFallback(
     "/accounts",
     {
       method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
       body: JSON.stringify(payload),
     },
     () => mockApi.createAccount(token, payload),
   )
 }
+
+export async function getAccountDetailApi(
+  token: string,
+  accountId: string,
+  page = 1,
+): Promise<mockApi.AccountDetailResponse> {
+  return fetchWithFallback(
+    `/accounts/${encodeURIComponent(accountId)}?page=${page}`,
+    {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.getAccountDetail(token, accountId, page),
+  )
+}
+
+export async function searchMovementsApi(
+  token: string,
+  params: mockApi.MovementsQueryParams,
+): Promise<mockApi.MovementsPageResponse> {
+  const queryParts: string[] = []
+  if (params.page) queryParts.push(`page=${params.page}`)
+  if (params.limit) queryParts.push(`limit=${params.limit}`)
+  if (params.from) queryParts.push(`from=${encodeURIComponent(params.from)}`)
+  if (params.to) queryParts.push(`to=${encodeURIComponent(params.to)}`)
+  if (params.type && params.type !== "all") queryParts.push(`type=${params.type}`)
+  if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`)
+  if (params.accountId) queryParts.push(`accountId=${encodeURIComponent(params.accountId)}`)
+
+  const qs = queryParts.length ? `?${queryParts.join("&")}` : ""
+
+  return fetchWithFallback(
+    `/movements${qs}`,
+    {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.searchMovements(token, params),
+  )
+}
+
 
 export async function logoutApi(token?: string) {
   return fetchWithFallback(
@@ -264,6 +309,98 @@ export async function createTransferApi(token: string, payload: mockApi.Transfer
     () => mockApi.createTransfer(token, payload),
   )
 }
+
+export async function createInternalTransferApi(
+  token: string,
+  payload: {
+    sourceAccountId: string
+    destinationAccountId: string
+    amount: number
+    description?: string
+  },
+  idempotencyKey?: string,
+): Promise<mockApi.TransferResult> {
+  return fetchWithFallback(
+    "/transactions/internal",
+    {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
+      body: JSON.stringify(payload),
+    },
+    () => mockApi.createInternalTransfer(token, payload),
+  )
+}
+
+export async function createThirdPartyTransferApi(
+  token: string,
+  payload: {
+    sourceAccountId: string
+    destinationCci: string
+    amount: number
+    description?: string
+  },
+  idempotencyKey?: string,
+): Promise<mockApi.TransferResult> {
+  return fetchWithFallback(
+    "/transactions/third-party",
+    {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
+      body: JSON.stringify(payload),
+    },
+    () => mockApi.createThirdPartyTransfer(token, payload),
+  )
+}
+
+export async function validateDestinationCciApi(
+  token: string,
+  cci: string,
+): Promise<mockApi.RecipientValidation> {
+  return fetchWithFallback(
+    `/transactions/third-party/validate?cci=${encodeURIComponent(cci)}`,
+    {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.validateDestinationCci(token, cci),
+  )
+}
+
+export async function getRecentRecipientsApi(
+  token: string,
+  limit = 5,
+  page = 1,
+): Promise<mockApi.RecentRecipient[]> {
+  return fetchWithFallback(
+    `/transactions/recent-recipients?limit=${limit}&page=${page}`,
+    {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.getRecentRecipients(token, limit, page),
+  )
+}
+
+export async function getReceiptApi(
+  token: string,
+  transferId: string,
+): Promise<mockApi.TransferReceipt> {
+  return fetchWithFallback(
+    `/transactions/${encodeURIComponent(transferId)}/receipt`,
+    {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+    () => mockApi.getReceipt(token, transferId),
+  )
+}
+
 
 export async function getClientsApi(token?: string): Promise<mockApi.Client[]> {
   return fetchWithFallback(

@@ -539,6 +539,9 @@ export type TransferResult = {
   status: "success"
   reference: string
   newBalance: number
+  transferId?: string
+  transferredAt?: string
+  estado?: string
 }
 
 /**
@@ -799,15 +802,263 @@ export async function updateClient(
  * Elimina (o desactiva) un cliente.
  */
 export async function deleteClient(token: string, clientId: string): Promise<{ ok: true }> {
-  // --- Integración real (user-management-service) ---
-  // const res = await fetch(`${process.env.NEXT_PUBLIC_USER_MGMT_SERVICE_URL}/users/${clientId}`, {
-  //   method: "DELETE",
-  //   headers: { Authorization: `Bearer ${token}` },
-  // })
-  // if (!res.ok) throw new Error("Error al eliminar")
-  // return { ok: true }
-  // -------------------------------------------------
   void token
   void clientId
   return delay<{ ok: true }>({ ok: true })
 }
+
+// -------------------------------------------------------------
+// SPRINT 2: HU05 - HU12 SOPORTE MOCK
+// -------------------------------------------------------------
+
+export type AccountDetailResponse = {
+  account: Account
+  movements: {
+    items: Movement[]
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+  }
+}
+
+export type MovementsQueryParams = {
+  page?: number
+  limit?: number
+  from?: string
+  to?: string
+  type?: "CREDITO" | "DEBITO" | "all"
+  q?: string
+  accountId?: string
+}
+
+export type MovementsPageResponse = {
+  items: Movement[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+export type RecipientValidation = {
+  maskedNumber: string
+  holder: string
+  currency: string
+  isOwnAccount: boolean
+}
+
+export type RecentRecipient = {
+  destinationCci: string
+  maskedNumber: string
+  holder: string
+  lastTransferredAt: string
+}
+
+export type TransferReceipt = {
+  operationId: string
+  reference: string
+  type: string
+  dateTime: string
+  amount: string
+  currency: string
+  amountFormatted: string
+  status: string
+  description: string
+  source: {
+    maskedNumber: string
+    holder: string
+  }
+  destination: {
+    maskedNumber: string
+    holder: string
+  }
+}
+
+export const RECENT_RECIPIENTS_DB: RecentRecipient[] = [
+  {
+    destinationCci: "191-4567890123-45",
+    maskedNumber: "191-****-45",
+    holder: "C*** R***",
+    lastTransferredAt: "2026-10-01T15:30:00Z",
+  },
+  {
+    destinationCci: "002-9876543210-12",
+    maskedNumber: "002-****-12",
+    holder: "L*** F***",
+    lastTransferredAt: "2026-09-28T18:10:00Z",
+  },
+  {
+    destinationCci: "011-1234567890-99",
+    maskedNumber: "011-****-99",
+    holder: "M*** L***",
+    lastTransferredAt: "2026-09-25T11:45:00Z",
+  },
+]
+
+export async function getAccountDetail(token: string, accountId: string, page = 1): Promise<AccountDetailResponse> {
+  void token
+  const accounts = await getAccounts(token)
+  const found = accounts.find((a) => a.id === accountId) || accounts[0]
+  const allMovements = await getAllMovements(token)
+  const filtered = allMovements.filter((m) =>
+    found.type === "checking"
+      ? m.description.includes("Cuenta corriente") || m.name.includes("Nómina")
+      : found.type === "savings"
+        ? m.description.includes("Ahorros")
+        : m.amount.includes("USD"),
+  )
+  const pageSize = 5
+  const total = filtered.length
+  const totalPages = Math.ceil(total / pageSize) || 1
+  const items = filtered.slice((page - 1) * pageSize, page * pageSize)
+
+  return delay<AccountDetailResponse>({
+    account: found,
+    movements: {
+      items,
+      page,
+      pageSize,
+      total,
+      totalPages,
+    },
+  })
+}
+
+export async function searchMovements(token: string, params: MovementsQueryParams): Promise<MovementsPageResponse> {
+  void token
+  const all = await getAllMovements(token)
+  let result = [...all]
+
+  if (params.q && params.q.trim()) {
+    const qLower = params.q.trim().toLowerCase()
+    result = result.filter(
+      (m) =>
+        m.name.toLowerCase().includes(qLower) ||
+        m.description.toLowerCase().includes(qLower) ||
+        m.category.toLowerCase().includes(qLower),
+    )
+  }
+
+  if (params.type && params.type !== "all") {
+    if (params.type === "CREDITO") {
+      result = result.filter((m) => m.type === "positive")
+    } else if (params.type === "DEBITO") {
+      result = result.filter((m) => m.type === "negative")
+    }
+  }
+
+  const page = params.page || 1
+  const pageSize = params.limit || 8
+  const total = result.length
+  const totalPages = Math.ceil(total / pageSize) || 1
+  const items = result.slice((page - 1) * pageSize, page * pageSize)
+
+  return delay<MovementsPageResponse>({
+    items,
+    page,
+    pageSize,
+    total,
+    totalPages,
+  })
+}
+
+export async function validateDestinationCci(token: string, cci: string): Promise<RecipientValidation> {
+  void token
+  const clean = cci.trim()
+  if (!clean || clean.length < 10) {
+    throw new Error("DESTINATION_NOT_FOUND")
+  }
+  const cleanLast = clean.slice(-2)
+
+  let name = "J*** P***"
+  if (clean.includes("4567")) name = "Carlos Ruiz"
+  else if (clean.includes("9876")) name = "Lucía Fernández"
+  else if (clean.includes("1234")) name = "María López"
+
+  return delay<RecipientValidation>({
+    maskedNumber: `${clean.slice(0, 4)}****${cleanLast}`,
+    holder: name.replace(/([a-zA-Z]{1})[a-zA-Z]+/g, "$1***"),
+    currency: clean.startsWith("002") ? "USD" : "PEN",
+    isOwnAccount: false,
+  })
+}
+
+export async function getRecentRecipients(token: string, limit = 5, page = 1): Promise<RecentRecipient[]> {
+  void token
+  void page
+  return delay<RecentRecipient[]>(RECENT_RECIPIENTS_DB.slice(0, limit))
+}
+
+export async function getReceipt(token: string, transferId: string): Promise<TransferReceipt> {
+  void token
+  return delay<TransferReceipt>({
+    operationId: transferId,
+    reference: `PEYA-${transferId.slice(-8).toUpperCase()}`,
+    type: "Transferencia Bancaria",
+    dateTime: new Date().toISOString(),
+    amount: "150.00",
+    currency: "PEN",
+    amountFormatted: "S/. 150.00",
+    status: "COMPLETADO",
+    description: "Transferencia de fondos",
+    source: {
+      maskedNumber: "191-****-89",
+      holder: "A*** M***",
+    },
+    destination: {
+      maskedNumber: "191-****-45",
+      holder: "C*** R***",
+    },
+  })
+}
+
+export async function createInternalTransfer(
+  token: string,
+  payload: {
+    sourceAccountId: string
+    destinationAccountId: string
+    amount: number
+    description?: string
+  },
+): Promise<TransferResult> {
+  void token
+  const accounts = await getAccounts(token)
+  const src = accounts.find((a) => a.id === payload.sourceAccountId) || accounts[0]
+  const currentNum = Number(src.balance.replace(/[^0-9.]/g, "")) || 1000
+  if (payload.amount > currentNum) {
+    throw new Error("INSUFFICIENT_FUNDS")
+  }
+  const tid = `int-${Date.now()}`
+  return delay<TransferResult>({
+    status: "success",
+    transferId: tid,
+    reference: `OP-${Date.now().toString().slice(-8)}`,
+    newBalance: currentNum - payload.amount,
+  })
+}
+
+export async function createThirdPartyTransfer(
+  token: string,
+  payload: {
+    sourceAccountId: string
+    destinationCci: string
+    amount: number
+    description?: string
+  },
+): Promise<TransferResult> {
+  void token
+  const accounts = await getAccounts(token)
+  const src = accounts.find((a) => a.id === payload.sourceAccountId) || accounts[0]
+  const currentNum = Number(src.balance.replace(/[^0-9.]/g, "")) || 1000
+  if (payload.amount > currentNum) {
+    throw new Error("INSUFFICIENT_FUNDS")
+  }
+  const tid = `ext-${Date.now()}`
+  return delay<TransferResult>({
+    status: "success",
+    transferId: tid,
+    reference: `OP-${Date.now().toString().slice(-8)}`,
+    newBalance: currentNum - payload.amount,
+  })
+}
+
