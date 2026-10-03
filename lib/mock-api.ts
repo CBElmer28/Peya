@@ -947,6 +947,40 @@ export async function searchMovements(token: string, params: MovementsQueryParam
     }
   }
 
+  // Filtro por rango de fechas (HU08)
+  // Las fechas mock vienen como "DD/MM/YYYY", los inputs como "YYYY-MM-DD"
+  if (params.from || params.to) {
+    const parseMovDate = (dateStr: string): Date | null => {
+      const parts = dateStr.split("/")
+      if (parts.length !== 3) return null
+      const [dd, mm, yyyy] = parts
+      return new Date(Number(yyyy), Number(mm) - 1, Number(dd))
+    }
+
+    const fromDate = params.from ? new Date(params.from + "T00:00:00") : null
+    const toDate = params.to ? new Date(params.to + "T23:59:59") : null
+
+    result = result.filter((m) => {
+      const movDate = parseMovDate(m.date)
+      if (!movDate) return true
+      if (fromDate && movDate < fromDate) return false
+      if (toDate && movDate > toDate) return false
+      return true
+    })
+  }
+
+  // Filtro por cuenta (accountId)
+  if (params.accountId) {
+    const accounts = await getAccounts(token)
+    const targetAccount = accounts.find((a) => a.id === params.accountId)
+    if (targetAccount) {
+      result = result.filter((m) =>
+        m.description.toLowerCase().includes(targetAccount.label.toLowerCase()) ||
+        m.description.toLowerCase().includes(targetAccount.type)
+      )
+    }
+  }
+
   const page = params.page || 1
   const pageSize = params.limit || 8
   const total = result.length

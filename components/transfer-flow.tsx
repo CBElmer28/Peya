@@ -90,15 +90,20 @@ export function TransferFlow() {
       .catch(() => setLoadingRecipients(false))
   }, [session, mode])
 
+function parseBalanceNumber(balanceStr?: string): number {
+  if (!balanceStr) return 0
+  const cleaned = balanceStr.replace(/^[^\d]*/, "").replace(/,/g, "")
+  const val = parseFloat(cleaned)
+  return Number.isNaN(val) ? 0 : val
+}
+
   // Cuenta origen seleccionada
   const sourceAccount = userAccounts.find((a) => a.id === sourceAccountId)
   // Cuenta destino propia seleccionada
   const destAccount = userAccounts.find((a) => a.id === destinationAccountId)
 
-  // Saldo numérico origen
-  const rawBalance = sourceAccount
-    ? Number(sourceAccount.balance.replace(/[^0-9.]/g, "")) || 0
-    : 0
+  // Saldo numérico origen correctamente parseado (ej. "S/. 12,480.50" -> 12480.50)
+  const rawBalance = parseBalanceNumber(sourceAccount?.balance)
 
   // Validar CCI a terceros en vivo (HU10)
   async function handleValidateCci(cciToValidate: string) {
