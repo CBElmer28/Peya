@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, Inject, forwardRef } from '@nestjs/c
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UsersService } from '../../users/users.service';
+import { getJwtSecret } from '../../common/security-config';
 import { AuthService } from '../auth.service';
 
 @Injectable()
@@ -14,7 +15,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET || 'BANKHUB_ENTERPRISE_JWT_SECRET_2026',
+      secretOrKey: getJwtSecret(),
       passReqToCallback: true,
     });
   }
