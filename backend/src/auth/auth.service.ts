@@ -8,7 +8,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { createHash } from 'crypto';
 import { UsersService } from '../users/users.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcryptjs';
 import * as nodemailer from 'nodemailer';
@@ -28,9 +30,6 @@ export class AuthService {
   private readonly MAX_ATTEMPTS = 5;
   private readonly LOCKOUT_DURATION_MS = 3 * 60 * 1000; // 3 minutos de bloqueo
 
-  // Blacklist en memoria para invalidación de sesiones (HU3 - SCRUM-22)
-  private revokedTokens = new Set<string>();
-
   // Mapa de tokens/códigos de recuperación de contraseña (HU4 - SCRUM-28/29/30)
   private resetTokens = new Map<
     string,
@@ -43,6 +42,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
   ) {
     const host = this.configService.get<string>('SMTP_HOST');
     const port = Number(this.configService.get<number>('SMTP_PORT') ?? 587);
@@ -65,7 +65,7 @@ export class AuthService {
     }
   }
 
-  async login(dto: LoginDto): Promise<{
+  async login(dto: LoginDto, ip?: string): Promise<{
     accessToken: string;
     tokenType: string;
     expiresIn: string;
@@ -148,6 +148,7 @@ export class AuthService {
 
     const expiresIn = dto.rememberMe ? '30d' : '24h';
     const accessToken = this.jwtService.sign(payload, { expiresIn });
+    await this.registerSession(user, accessToken, ip);
 
     return {
       accessToken,
@@ -162,11 +163,35 @@ export class AuthService {
     };
   }
 
-  // HU3 - SCRUM-21/22: Cerrar sesión e invalidar token JWT en Blacklist
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token.replace(/^Bearer\s+/i, '').trim()).digest('hex');
+  }
+
+  /** Persiste la sesion (tabla sesion). Solo se guarda el SHA-256 del JWT, nunca el token. */
+  private async registerSession(
+    user: { id: string; kind?: 'cliente' | 'admin' },
+    token: string,
+    ip?: string,
+  ): Promise<void> {
+    const exp = (this.jwtService.decode(token) as { exp: number }).exp;
+    await this.prisma.sesion.create({
+      data: {
+        id_cliente: user.kind === 'admin' ? null : user.id,
+        id_admin: user.kind === 'admin' ? user.id : null,
+        token_hash: this.hashToken(token),
+        fecha_expiracion: new Date(exp * 1000),
+        ip_origen: ip?.slice(0, 45),
+      },
+    });
+  }
+
+  // HU3 - SCRUM-21/22: Cerrar sesión e invalidar la sesión persistida (tabla sesion)
   async logout(token?: string): Promise<{ success: boolean; message: string }> {
     if (token) {
-      const cleanToken = token.replace(/^Bearer\s+/i, '').trim();
-      this.revokedTokens.add(cleanToken);
+      await this.prisma.sesion.updateMany({
+        where: { token_hash: this.hashToken(token), estado_sesion: 'ACTIVA' },
+        data: { estado_sesion: 'CERRADA', fecha_cierre: new Date() },
+      });
     }
     return {
       success: true,
@@ -174,9 +199,13 @@ export class AuthService {
     };
   }
 
-  isTokenRevoked(token: string): boolean {
-    const cleanToken = token.replace(/^Bearer\s+/i, '').trim();
-    return this.revokedTokens.has(cleanToken);
+  /** Un JWT es valido solo si existe su sesion ACTIVA y vigente. */
+  async isSessionActive(token: string): Promise<boolean> {
+    const s = await this.prisma.sesion.findUnique({
+      where: { token_hash: this.hashToken(token) },
+      select: { estado_sesion: true, fecha_expiracion: true },
+    });
+    return !!s && s.estado_sesion === 'ACTIVA' && s.fecha_expiracion > new Date();
   }
 
   private async sendPasswordResetEmail(email: string, otpCode: string): Promise<void> {

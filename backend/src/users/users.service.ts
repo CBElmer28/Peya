@@ -15,6 +15,8 @@ export interface User {
   status: 'active' | 'inactive';
   selfieUrl?: string;
   registeredAt: string;
+  /** Tabla de origen de la identidad (sesion.id_cliente vs sesion.id_admin). */
+  kind?: 'cliente' | 'admin';
 }
 
 type ClienteRow = Prisma.clienteGetPayload<object>;
@@ -33,6 +35,24 @@ function toUser(c: ClienteRow): User {
     status: c.estado === 'ACTIVO' ? 'active' : 'inactive',
     selfieUrl: c.selfie_url ?? undefined,
     registeredAt: c.fecha_creacion.toISOString().slice(0, 10),
+    kind: 'cliente',
+  };
+}
+
+type AdminRow = Prisma.adminGetPayload<object>;
+
+/** Administradores del panel (tabla admin + admin_rol). Siempre role 'admin'. */
+function adminToUser(a: AdminRow): User {
+  return {
+    id: a.id,
+    dni: '',
+    name: a.nombre_usuario,
+    email: a.correo,
+    passwordHash: a.password_hash,
+    role: 'admin',
+    status: a.estado === 'ACTIVO' ? 'active' : 'inactive',
+    registeredAt: a.fecha_creacion.toISOString().slice(0, 10),
+    kind: 'admin',
   };
 }
 
@@ -109,13 +129,23 @@ export class UsersService {
     const c = await this.prisma.cliente.findFirst({
       where: { correo: { equals: email.trim(), mode: 'insensitive' } },
     });
-    return c ? toUser(c) : null;
+    if (c) return toUser(c);
+    return this.findAdminByEmail(email);
+  }
+
+  private async findAdminByEmail(email: string): Promise<User | null> {
+    const a = await this.prisma.admin.findFirst({
+      where: { correo: { equals: email.trim(), mode: 'insensitive' } },
+    });
+    return a ? adminToUser(a) : null;
   }
 
   async findById(id: string): Promise<User | null> {
     if (!UUID_RE.test(id)) return null;
     const c = await this.prisma.cliente.findUnique({ where: { id } });
-    return c ? toUser(c) : null;
+    if (c) return toUser(c);
+    const a = await this.prisma.admin.findUnique({ where: { id } });
+    return a ? adminToUser(a) : null;
   }
 
   async findAll(): Promise<Omit<User, 'passwordHash'>[]> {
@@ -169,18 +199,19 @@ export class UsersService {
     const c = await this.prisma.cliente.findFirst({
       where: { OR: [{ correo: { equals: clean, mode: 'insensitive' } }, { dni: clean }] },
     });
-    return c ? toUser(c) : null;
+    if (c) return toUser(c);
+    return clean.includes('@') ? this.findAdminByEmail(clean) : null;
   }
 
   async updatePassword(id: string, newPasswordHash: string): Promise<boolean> {
     if (!UUID_RE.test(id)) throw new NotFoundException('Usuario no encontrado');
     try {
-      await this.prisma.transaction((tx) =>
-        tx.cliente.update({
-          where: { id },
-          data: { password_hash: newPasswordHash, fecha_actualizacion: new Date() },
-        }),
-      );
+      const isAdmin = await this.prisma.admin.findUnique({ where: { id }, select: { id: true } });
+      const data = { password_hash: newPasswordHash, fecha_actualizacion: new Date() };
+      await this.prisma.transaction(async (tx) => {
+        if (isAdmin) await tx.admin.update({ where: { id }, data });
+        else await tx.cliente.update({ where: { id }, data });
+      });
       return true;
     } catch (e) {
       if (prismaCode(e) === 'P2025') throw new NotFoundException('Usuario no encontrado');

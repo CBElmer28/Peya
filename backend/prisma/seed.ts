@@ -32,6 +32,17 @@ async function main() {
       create: { ...u, password_hash: hash },
     });
   }
+  // Administrador del panel (tablas admin + admin_rol; roles creados por Liquibase)
+  const admin = await prisma.admin.upsert({
+    where: { id: U(90) },
+    update: {},
+    create: { id: U(90), nombre_usuario: 'Administrador BankHub', correo: 'admin@bankhub.com', password_hash: hash },
+  });
+  await prisma.admin_rol.upsert({
+    where: { id_admin_id_rol: { id_admin: admin.id, id_rol: 1 } },
+    update: {},
+    create: { id_admin: admin.id, id_rol: 1 },
+  });
   for (const a of accounts) {
     await prisma.cuenta.upsert({
       where: { id: a.id },

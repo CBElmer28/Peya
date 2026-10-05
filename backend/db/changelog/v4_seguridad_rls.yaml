@@ -1,0 +1,42 @@
+databaseChangeLog:
+  - changeSet:
+      id: v4-seguridad-rls
+      author: backend_sprint2
+      changes:
+        - sql:
+            dbms: postgresql
+            splitStatements: true
+            endDelimiter: ;;
+            sql: |
+              -- Supabase expone el esquema public por PostgREST con la anon key (publica).
+              -- RLS sin politicas = denegar todo a anon/authenticated. El backend se conecta
+              -- con el rol propietario (postgres), que no esta sujeto a RLS.
+              ALTER TABLE cliente ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE tipo_cuenta ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE cuenta ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE transferencia_internas ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE transferencia_externa ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE movimiento ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE idempotencia ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE rol ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE admin ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE admin_rol ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE sesion ENABLE ROW LEVEL SECURITY;;
+
+              -- Defensa adicional: sin privilegios para los roles de la API publica de Supabase
+              -- (solo existen en Supabase; en PostgreSQL local el bloque se omite).
+              DO $$
+              BEGIN
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+                  REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
+                  REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon;
+                END IF;
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+                  REVOKE ALL ON ALL TABLES IN SCHEMA public FROM authenticated;
+                  REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM authenticated;
+                END IF;
+              END $$;;
+      rollback:
+        - sql:
+            sql: SELECT 1;

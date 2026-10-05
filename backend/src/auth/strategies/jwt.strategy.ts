@@ -21,9 +21,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(req: any, payload: { sub: string; email: string; name: string; role: string }) {
-    // 1. Validar que el token no haya sido revocado en el logout (SCRUM-22 / SCRUM-25)
+    // 1. La sesion debe existir, estar ACTIVA y vigente en BD (logout = sesion CERRADA) (SCRUM-22 / SCRUM-25)
     const rawToken = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
-    if (rawToken && this.authService.isTokenRevoked(rawToken)) {
+    if (!rawToken || !(await this.authService.isSessionActive(rawToken))) {
       throw new UnauthorizedException(
         'El token de sesión ha sido revocado (sesión cerrada). Por favor inicia sesión nuevamente.',
       );

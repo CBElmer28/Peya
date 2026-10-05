@@ -6,6 +6,7 @@ import {
   UseGuards,
   Request,
   Headers,
+  Ip,
   UsePipes,
   ValidationPipe,
   HttpCode,
@@ -47,8 +48,8 @@ export class AuthController {
     status: 429,
     description: 'Demasiados intentos fallidos (SCRUM-18 - Bloqueo de seguridad por 3 min).',
   })
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Ip() ip: string) {
+    return this.authService.login(dto, ip);
   }
 
   // ==========================================
