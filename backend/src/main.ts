@@ -1,23 +1,23 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import helmet from 'helmet';
+import { getCorsOrigins } from './common/security-config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const logger = new Logger('BankHubBootstrap');
   const app = await NestFactory.create(AppModule);
 
+  // Headers de seguridad HTTP (CSP, HSTS, X-Content-Type-Options, etc.)
+  app.use(helmet());
+
   // Prefijo global para todas las rutas API
   app.setGlobalPrefix('api');
 
   // Habilitar CORS para permitir peticiones desde el frontend Next.js
   app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3002',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:3002',
-    ],
+    origin: getCorsOrigins(),
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });

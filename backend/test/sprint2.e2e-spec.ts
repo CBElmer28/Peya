@@ -526,6 +526,26 @@ describe('Sprint 2 - cuentas, movimientos y transferencias (PostgreSQL real)', (
     });
   });
 
+  describe('Autorizacion por rol (/users y /admin)', () => {
+    it('sin token 401; cliente 403; admin 200; registro/check siguen publicos', async () => {
+      const client = await makeActor([]);
+      const adminActor = await makeActor([]);
+      await prisma.cliente.update({ where: { id: adminActor.id }, data: { rol: 'ADMIN' } });
+      const adminLogin = await http().post('/api/auth/login').send({ email: adminActor.email, password: PASSWORD });
+      const adminAuth = { Authorization: `Bearer ${adminLogin.body.accessToken}` };
+
+      for (const path of ['/api/users', '/api/admin/metrics', '/api/admin/accounts']) {
+        expect((await http().get(path)).status).toBe(401);
+        expect((await http().get(path).set(auth(client))).status).toBe(403);
+        expect((await http().get(path).set(adminAuth)).status).toBe(200);
+      }
+      expect((await http().delete(`/api/users/${adminActor.id}`).set(auth(client))).status).toBe(403);
+      expect((await http().patch(`/api/users/${adminActor.id}`).set(auth(client)).send({ role: 'client' })).status).toBe(403);
+      expect((await http().post('/api/users').send({ name: 'X', email: 'x@x.com', role: 'admin' })).status).toBe(401);
+      expect((await http().get('/api/users/check-email').query({ email: 'nadie@x.com' })).status).toBe(200);
+    });
+  });
+
   describe('Auditoria (triggers + contexto de usuario)', () => {
     it('registra cambios de saldo con el usuario autenticado y sin secretos', async () => {
       const A = await makeActor([{ saldo: '100.00' }, { saldo: '0.00' }]);
