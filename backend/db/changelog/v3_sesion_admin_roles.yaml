@@ -1,0 +1,67 @@
+databaseChangeLog:
+  - changeSet:
+      id: v3-sesion-admin-roles
+      author: backend_sprint2
+      changes:
+        - sql:
+            dbms: postgresql
+            splitStatements: true
+            endDelimiter: ;;
+            sql: |
+              -- Modelo APF2: Rol, Admin, Admin_rol (N:M) y Sesion.
+              CREATE TABLE rol (
+                id SMALLINT PRIMARY KEY,
+                nombre VARCHAR(40) NOT NULL UNIQUE,
+                descripcion VARCHAR(255),
+                estado VARCHAR(10) NOT NULL DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO','INACTIVO'))
+              );;
+              INSERT INTO rol (id, nombre, descripcion) VALUES
+                (1, 'ADMIN',   'Gestión completa del panel administrativo'),
+                (2, 'SOPORTE', 'Consulta de clientes y cuentas supervisadas');;
+
+              CREATE TABLE admin (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                nombre_usuario VARCHAR(100) NOT NULL,
+                correo VARCHAR(255) NOT NULL,
+                password_hash VARCHAR(100) NOT NULL,
+                intentos_fallidos INT NOT NULL DEFAULT 0,
+                bloqueado_hasta TIMESTAMPTZ,
+                estado VARCHAR(10) NOT NULL DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO','INACTIVO')),
+                fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+              );;
+              CREATE UNIQUE INDEX ux_admin_correo ON admin (lower(correo));;
+
+              CREATE TABLE admin_rol (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id_admin UUID NOT NULL REFERENCES admin(id) ON DELETE CASCADE,
+                id_rol SMALLINT NOT NULL REFERENCES rol(id),
+                CONSTRAINT ux_admin_rol UNIQUE (id_admin, id_rol)
+              );;
+              CREATE INDEX ix_admin_rol_rol ON admin_rol (id_rol);;
+
+              -- Sesion de cliente O de admin (exactamente uno). Nunca se guarda el JWT: solo su SHA-256.
+              CREATE TABLE sesion (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id_cliente UUID REFERENCES cliente(id),
+                id_admin UUID REFERENCES admin(id) ON DELETE CASCADE,
+                token_hash CHAR(64) NOT NULL UNIQUE,
+                fecha_inicio TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                fecha_expiracion TIMESTAMPTZ NOT NULL,
+                fecha_cierre TIMESTAMPTZ,
+                estado_sesion VARCHAR(10) NOT NULL DEFAULT 'ACTIVA' CHECK (estado_sesion IN ('ACTIVA','CERRADA')),
+                ip_origen VARCHAR(45),
+                CONSTRAINT ck_sesion_un_titular CHECK ((id_cliente IS NOT NULL) <> (id_admin IS NOT NULL))
+              );;
+              CREATE INDEX ix_sesion_cliente ON sesion (id_cliente, fecha_inicio DESC) WHERE id_cliente IS NOT NULL;;
+              CREATE INDEX ix_sesion_admin ON sesion (id_admin, fecha_inicio DESC) WHERE id_admin IS NOT NULL;;
+
+              CREATE TRIGGER t_auditoria_admin
+                AFTER INSERT OR UPDATE OR DELETE ON admin
+                FOR EACH ROW EXECUTE FUNCTION procesar_auditoria();;
+              CREATE TRIGGER t_auditoria_admin_rol
+                AFTER INSERT OR UPDATE OR DELETE ON admin_rol
+                FOR EACH ROW EXECUTE FUNCTION procesar_auditoria();;
+      rollback:
+        - sql:
+            sql: DROP TABLE IF EXISTS sesion, admin_rol, admin, rol CASCADE;

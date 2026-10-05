@@ -546,6 +546,58 @@ describe('Sprint 2 - cuentas, movimientos y transferencias (PostgreSQL real)', (
     });
   });
 
+  describe('Sesiones persistidas y administradores (tablas sesion, admin, rol)', () => {
+    it('login crea sesion con hash (no el token); logout la cierra y el JWT deja de valer', async () => {
+      const A = await makeActor([]);
+      expect((await http().get('/api/auth/profile').set(auth(A))).status).toBe(200);
+      const ses = await prisma.sesion.findMany({ where: { id_cliente: A.id } });
+      expect(ses.length).toBe(1);
+      expect(ses[0].estado_sesion).toBe('ACTIVA');
+      expect(ses[0].token_hash).toHaveLength(64);
+      expect(ses[0].token_hash).not.toBe(A.token);
+      expect((await http().post('/api/auth/logout').set(auth(A))).status).toBe(200);
+      const after = await prisma.sesion.findMany({ where: { id_cliente: A.id } });
+      expect(after[0].estado_sesion).toBe('CERRADA');
+      expect(after[0].fecha_cierre).not.toBeNull();
+      expect((await http().get('/api/auth/profile').set(auth(A))).status).toBe(401);
+    });
+
+    it('token firmado valido pero sin sesion en BD -> 401', async () => {
+      const A = await makeActor([]);
+      await prisma.sesion.deleteMany({ where: { id_cliente: A.id } });
+      expect((await http().get('/api/accounts').set(auth(A))).status).toBe(401);
+    });
+
+    it('admin de la tabla admin: login, sesion propia y acceso a /admin; no es cliente bancario', async () => {
+      const n = `${Date.now()}`.slice(-8);
+      const email = `adm${n}@test.local`;
+      const a = await prisma.admin.create({
+        data: { nombre_usuario: `Admin ${n}`, correo: email, password_hash: bcrypt.hashSync(PASSWORD, 4) },
+      });
+      await prisma.admin_rol.create({ data: { id_admin: a.id, id_rol: 1 } });
+      const login = await http().post('/api/auth/login').send({ email, password: PASSWORD });
+      expect(login.status).toBe(200);
+      expect(login.body.user.role).toBe('admin');
+      const h = { Authorization: `Bearer ${login.body.accessToken}` };
+      expect((await http().get('/api/admin/metrics').set(h)).status).toBe(200);
+      expect(await prisma.sesion.count({ where: { id_admin: a.id } })).toBe(1);
+      expect((await http().get('/api/accounts').set(h)).body).toEqual([]);
+    });
+
+    it('integridad: una sesion debe tener exactamente un titular y rol_admin es unico', async () => {
+      await expect(
+        prisma.$executeRawUnsafe(
+          `INSERT INTO sesion (token_hash, fecha_expiracion) VALUES ('${'a'.repeat(64)}', now() + interval '1 hour')`,
+        ),
+      ).rejects.toThrow();
+      const a = await prisma.admin.create({
+        data: { nombre_usuario: 'dup', correo: `dup${Date.now()}@test.local`, password_hash: 'x' },
+      });
+      await prisma.admin_rol.create({ data: { id_admin: a.id, id_rol: 2 } });
+      await expect(prisma.admin_rol.create({ data: { id_admin: a.id, id_rol: 2 } })).rejects.toThrow();
+    });
+  });
+
   describe('Auditoria (triggers + contexto de usuario)', () => {
     it('registra cambios de saldo con el usuario autenticado y sin secretos', async () => {
       const A = await makeActor([{ saldo: '100.00' }, { saldo: '0.00' }]);
