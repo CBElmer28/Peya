@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model audit_logs {
+  id             BigInt    @id @default(autoincrement())
+  nombre_tabla   String    @db.VarChar(100)
+  operacion      String    @db.VarChar(10)
+  valor_anterior Json?
+  valor_nuevo    Json?
+  usuario_app    String?   @default("SYSTEM") @db.VarChar(100)
+  fecha          DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([nombre_tabla, fecha(sort: Desc)], map: "ix_audit_tabla_fecha")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model cliente {
+  id                  String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombres             String         @db.VarChar(150)
+  apellidos           String         @default("") @db.VarChar(150)
+  dni                 String         @unique @db.VarChar(8)
+  fecha_nacimiento    DateTime?      @db.Date
+  correo              String         @db.VarChar(255)
+  telefono            String?        @db.VarChar(15)
+  password_hash       String         @db.VarChar(100)
+  intentos_fallidos   Int            @default(0)
+  bloqueo_hasta       DateTime?      @db.Timestamptz(6)
+  estado              String         @default("ACTIVO") @db.VarChar(10)
+  rol                 String         @default("CLIENTE") @db.VarChar(10)
+  selfie_url          String?
+  fecha_creacion      DateTime       @default(now()) @db.Timestamptz(6)
+  fecha_actualizacion DateTime       @default(now()) @db.Timestamptz(6)
+  cuenta              cuenta[]
+  idempotencia        idempotencia[]
+  sesion              sesion[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cuenta {
+  id                                                                      String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_cliente                                                              String                   @db.Uuid
+  id_tipo_cuenta                                                          Int                      @db.SmallInt
+  moneda                                                                  String                   @db.Char(3)
+  cci                                                                     String                   @unique @db.VarChar(25)
+  saldo                                                                   Decimal                  @default(0) @db.Decimal(19, 2)
+  estado_cuenta                                                           String                   @default("ACTIVA") @db.VarChar(10)
+  fecha_apertura                                                          DateTime                 @default(now()) @db.Timestamptz(6)
+  fecha_actualizacion                                                     DateTime                 @default(now()) @db.Timestamptz(6)
+  cliente                                                                 cliente                  @relation(fields: [id_cliente], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tipo_cuenta                                                             tipo_cuenta              @relation(fields: [id_tipo_cuenta], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  movimiento                                                              movimiento[]
+  transferencia_externa_transferencia_externa_id_cuenta_destinoTocuenta   transferencia_externa[]  @relation("transferencia_externa_id_cuenta_destinoTocuenta")
+  transferencia_externa_transferencia_externa_id_cuenta_origenTocuenta    transferencia_externa[]  @relation("transferencia_externa_id_cuenta_origenTocuenta")
+  transferencia_internas_transferencia_internas_id_cuenta_destinoTocuenta transferencia_internas[] @relation("transferencia_internas_id_cuenta_destinoTocuenta")
+  transferencia_internas_transferencia_internas_id_cuenta_origenTocuenta  transferencia_internas[] @relation("transferencia_internas_id_cuenta_origenTocuenta")
+
+  @@index([id_cliente, fecha_apertura], map: "ix_cuenta_cliente")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model databasechangelog {
+  id            String   @db.VarChar(255)
+  author        String   @db.VarChar(255)
+  filename      String   @db.VarChar(255)
+  dateexecuted  DateTime @db.Timestamp(6)
+  orderexecuted Int
+  exectype      String   @db.VarChar(10)
+  md5sum        String?  @db.VarChar(35)
+  description   String?  @db.VarChar(255)
+  comments      String?  @db.VarChar(255)
+  tag           String?  @db.VarChar(255)
+  liquibase     String?  @db.VarChar(20)
+  contexts      String?  @db.VarChar(255)
+  labels        String?  @db.VarChar(255)
+  deployment_id String?  @db.VarChar(10)
+
+  @@ignore
+}
+
+model databasechangeloglock {
+  id          Int       @id
+  locked      Boolean
+  lockgranted DateTime? @db.Timestamp(6)
+  lockedby    String?   @db.VarChar(255)
+}
+
+model idempotencia {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_cliente     String   @db.Uuid
+  operacion      String   @db.VarChar(30)
+  clave          String   @db.VarChar(100)
+  hash_solicitud String   @db.Char(64)
+  recurso_id     String?  @db.Uuid
+  respuesta      Json?
+  fecha_creacion DateTime @default(now()) @db.Timestamptz(6)
+  cliente        cliente  @relation(fields: [id_cliente], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id_cliente, operacion, clave], map: "ux_idempotencia")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model movimiento {
+  id                       String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_cuenta                String                  @db.Uuid
+  tipo                     String                  @db.VarChar(7)
+  categoria                String                  @default("Transferencia") @db.VarChar(30)
+  monto                    Decimal                 @db.Decimal(19, 2)
+  saldo_posterior          Decimal                 @db.Decimal(19, 2)
+  descripcion              String                  @db.VarChar(200)
+  fecha                    DateTime                @default(now()) @db.Timestamptz(6)
+  id_transferencia_interna String?                 @db.Uuid
+  id_transferencia_externa String?                 @db.Uuid
+  cuenta                   cuenta                  @relation(fields: [id_cuenta], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transferencia_externa    transferencia_externa?  @relation(fields: [id_transferencia_externa], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transferencia_internas   transferencia_internas? @relation(fields: [id_transferencia_interna], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id_cuenta, fecha(sort: Desc), id(sort: Desc)], map: "ix_mov_cuenta_fecha")
+  @@index([id_cuenta, monto], map: "ix_mov_cuenta_monto")
+  @@index([id_cuenta, tipo, fecha(sort: Desc)], map: "ix_mov_cuenta_tipo_fecha")
+  @@index([descripcion(ops: raw("gin_trgm_ops"))], map: "ix_mov_descripcion_trgm", type: Gin)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tipo_cuenta {
+  id                    Int      @id @db.SmallInt
+  codigo                String   @unique @db.VarChar(20)
+  nombre                String   @db.VarChar(60)
+  descripcion           String?  @db.VarChar(255)
+  saldo_minimo_apertura Decimal  @default(0) @db.Decimal(19, 2)
+  cuenta                cuenta[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model transferencia_externa {
+  id                                                     String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_cuenta_origen                                       String       @db.Uuid
+  id_cuenta_destino                                      String       @db.Uuid
+  cci_destino                                            String       @db.VarChar(25)
+  monto                                                  Decimal      @db.Decimal(19, 2)
+  moneda                                                 String       @db.Char(3)
+  descripcion                                            String?      @db.VarChar(200)
+  estado                                                 String       @default("PENDIENTE") @db.VarChar(10)
+  fecha_creacion                                         DateTime     @default(now()) @db.Timestamptz(6)
+  movimiento                                             movimiento[]
+  cuenta_transferencia_externa_id_cuenta_destinoTocuenta cuenta       @relation("transferencia_externa_id_cuenta_destinoTocuenta", fields: [id_cuenta_destino], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cuenta_transferencia_externa_id_cuenta_origenTocuenta  cuenta       @relation("transferencia_externa_id_cuenta_origenTocuenta", fields: [id_cuenta_origen], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id_cuenta_origen, cci_destino, fecha_creacion(sort: Desc)], map: "ix_te_origen_cci")
+  @@index([id_cuenta_origen, fecha_creacion(sort: Desc)], map: "ix_te_origen_fecha")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model transferencia_internas {
+  id                                                      String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_cuenta_origen                                        String       @db.Uuid
+  id_cuenta_destino                                       String       @db.Uuid
+  monto                                                   Decimal      @db.Decimal(19, 2)
+  moneda                                                  String       @db.Char(3)
+  descripcion                                             String?      @db.VarChar(200)
+  estado                                                  String       @default("PENDIENTE") @db.VarChar(10)
+  fecha_creacion                                          DateTime     @default(now()) @db.Timestamptz(6)
+  movimiento                                              movimiento[]
+  cuenta_transferencia_internas_id_cuenta_destinoTocuenta cuenta       @relation("transferencia_internas_id_cuenta_destinoTocuenta", fields: [id_cuenta_destino], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cuenta_transferencia_internas_id_cuenta_origenTocuenta  cuenta       @relation("transferencia_internas_id_cuenta_origenTocuenta", fields: [id_cuenta_origen], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id_cuenta_destino, fecha_creacion(sort: Desc)], map: "ix_ti_destino_fecha")
+  @@index([id_cuenta_origen, fecha_creacion(sort: Desc)], map: "ix_ti_origen_fecha")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model admin {
+  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre_usuario      String      @db.VarChar(100)
+  correo              String      @db.VarChar(255)
+  password_hash       String      @db.VarChar(100)
+  intentos_fallidos   Int         @default(0)
+  bloqueado_hasta     DateTime?   @db.Timestamptz(6)
+  estado              String      @default("ACTIVO") @db.VarChar(10)
+  fecha_creacion      DateTime    @default(now()) @db.Timestamptz(6)
+  fecha_actualizacion DateTime    @default(now()) @db.Timestamptz(6)
+  admin_rol           admin_rol[]
+  sesion              sesion[]
+}
+
+model admin_rol {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_admin String @db.Uuid
+  id_rol   Int    @db.SmallInt
+  admin    admin  @relation(fields: [id_admin], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rol      rol    @relation(fields: [id_rol], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id_admin, id_rol], map: "ux_admin_rol")
+  @@index([id_rol], map: "ix_admin_rol_rol")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model rol {
+  id          Int         @id @db.SmallInt
+  nombre      String      @unique @db.VarChar(40)
+  descripcion String?     @db.VarChar(255)
+  estado      String      @default("ACTIVO") @db.VarChar(10)
+  admin_rol   admin_rol[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sesion {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_cliente       String?   @db.Uuid
+  id_admin         String?   @db.Uuid
+  token_hash       String    @unique @db.Char(64)
+  fecha_inicio     DateTime  @default(now()) @db.Timestamptz(6)
+  fecha_expiracion DateTime  @db.Timestamptz(6)
+  fecha_cierre     DateTime? @db.Timestamptz(6)
+  estado_sesion    String    @default("ACTIVA") @db.VarChar(10)
+  ip_origen        String?   @db.VarChar(45)
+  admin            admin?    @relation(fields: [id_admin], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  cliente          cliente?  @relation(fields: [id_cliente], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}

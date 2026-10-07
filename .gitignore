@@ -1,4 +1,10 @@
 node_modules/
 .next/
+dist/
 .env
 .env.local
+.claude/
+.mcp.json
+*.tsbuildinfo
+AGENTS.md
+CLAUDE.md

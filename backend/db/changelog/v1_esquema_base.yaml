@@ -1,0 +1,124 @@
+databaseChangeLog:
+  - changeSet:
+      id: v1-esquema-base
+      author: backend_sprint2
+      changes:
+        - sql:
+            dbms: postgresql
+            splitStatements: true
+            endDelimiter: ;;
+            sql: |
+              CREATE EXTENSION IF NOT EXISTS pg_trgm;;
+
+              -- Cliente (draw.io) + rol/selfie_url/fecha_actualizacion (ver reporte de discrepancias)
+              CREATE TABLE cliente (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                nombres VARCHAR(150) NOT NULL,
+                apellidos VARCHAR(150) NOT NULL DEFAULT '',
+                dni VARCHAR(8) NOT NULL UNIQUE,
+                fecha_nacimiento DATE,
+                correo VARCHAR(255) NOT NULL,
+                telefono VARCHAR(15),
+                password_hash VARCHAR(100) NOT NULL,
+                intentos_fallidos INT NOT NULL DEFAULT 0,
+                bloqueo_hasta TIMESTAMPTZ,
+                estado VARCHAR(10) NOT NULL DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO','INACTIVO')),
+                rol VARCHAR(10) NOT NULL DEFAULT 'CLIENTE' CHECK (rol IN ('CLIENTE','ADMIN')),
+                selfie_url TEXT,
+                fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+              );;
+              CREATE UNIQUE INDEX ux_cliente_correo ON cliente (lower(correo));;
+
+              CREATE TABLE tipo_cuenta (
+                id SMALLINT PRIMARY KEY,
+                codigo VARCHAR(20) NOT NULL UNIQUE,
+                nombre VARCHAR(60) NOT NULL,
+                descripcion VARCHAR(255),
+                saldo_minimo_apertura NUMERIC(19,2) NOT NULL DEFAULT 0 CHECK (saldo_minimo_apertura >= 0)
+              );;
+              INSERT INTO tipo_cuenta (id, codigo, nombre, descripcion) VALUES
+                (1, 'checking', 'Cuenta corriente', 'Disponible para uso inmediato'),
+                (2, 'savings',  'Ahorros',          'Cuenta de ahorros'),
+                (3, 'usd',      'Cuenta en dólares','Cuenta en moneda extranjera');;
+
+              CREATE TABLE cuenta (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id_cliente UUID NOT NULL REFERENCES cliente(id),
+                id_tipo_cuenta SMALLINT NOT NULL REFERENCES tipo_cuenta(id),
+                moneda CHAR(3) NOT NULL CHECK (moneda IN ('PEN','USD')),
+                cci VARCHAR(25) NOT NULL UNIQUE,
+                saldo NUMERIC(19,2) NOT NULL DEFAULT 0 CHECK (saldo >= 0),
+                estado_cuenta VARCHAR(10) NOT NULL DEFAULT 'ACTIVA' CHECK (estado_cuenta IN ('ACTIVA','BLOQUEADA','CERRADA')),
+                fecha_apertura TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+              );;
+              CREATE INDEX ix_cuenta_cliente ON cuenta (id_cliente, fecha_apertura);;
+
+              CREATE TABLE transferencia_internas (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id_cuenta_origen UUID NOT NULL REFERENCES cuenta(id),
+                id_cuenta_destino UUID NOT NULL REFERENCES cuenta(id),
+                monto NUMERIC(19,2) NOT NULL CHECK (monto > 0),
+                moneda CHAR(3) NOT NULL CHECK (moneda IN ('PEN','USD')),
+                descripcion VARCHAR(200),
+                estado VARCHAR(10) NOT NULL DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE','COMPLETADO','RECHAZADO')),
+                fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT ck_ti_origen_distinto CHECK (id_cuenta_origen <> id_cuenta_destino)
+              );;
+              CREATE INDEX ix_ti_origen_fecha ON transferencia_internas (id_cuenta_origen, fecha_creacion DESC);;
+              CREATE INDEX ix_ti_destino_fecha ON transferencia_internas (id_cuenta_destino, fecha_creacion DESC);;
+
+              -- Transferencia_externa: se agregan id_cuenta_destino, descripcion y estado (ver reporte)
+              CREATE TABLE transferencia_externa (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id_cuenta_origen UUID NOT NULL REFERENCES cuenta(id),
+                id_cuenta_destino UUID NOT NULL REFERENCES cuenta(id),
+                cci_destino VARCHAR(25) NOT NULL,
+                monto NUMERIC(19,2) NOT NULL CHECK (monto > 0),
+                moneda CHAR(3) NOT NULL CHECK (moneda IN ('PEN','USD')),
+                descripcion VARCHAR(200),
+                estado VARCHAR(10) NOT NULL DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE','COMPLETADO','RECHAZADO')),
+                fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT ck_te_origen_distinto CHECK (id_cuenta_origen <> id_cuenta_destino)
+              );;
+              CREATE INDEX ix_te_origen_fecha ON transferencia_externa (id_cuenta_origen, fecha_creacion DESC);;
+              CREATE INDEX ix_te_origen_cci ON transferencia_externa (id_cuenta_origen, cci_destino, fecha_creacion DESC);;
+
+              -- Libro de movimientos (no existe en el draw.io; requerido por HU07/HU08/HU09)
+              CREATE TABLE movimiento (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id_cuenta UUID NOT NULL REFERENCES cuenta(id),
+                tipo VARCHAR(7) NOT NULL CHECK (tipo IN ('CREDITO','DEBITO')),
+                categoria VARCHAR(30) NOT NULL DEFAULT 'Transferencia',
+                monto NUMERIC(19,2) NOT NULL CHECK (monto > 0),
+                saldo_posterior NUMERIC(19,2) NOT NULL CHECK (saldo_posterior >= 0),
+                descripcion VARCHAR(200) NOT NULL,
+                fecha TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                id_transferencia_interna UUID REFERENCES transferencia_internas(id),
+                id_transferencia_externa UUID REFERENCES transferencia_externa(id),
+                CONSTRAINT ck_mov_una_transferencia CHECK (id_transferencia_interna IS NULL OR id_transferencia_externa IS NULL)
+              );;
+              CREATE INDEX ix_mov_cuenta_fecha ON movimiento (id_cuenta, fecha DESC, id DESC);;
+              CREATE INDEX ix_mov_cuenta_tipo_fecha ON movimiento (id_cuenta, tipo, fecha DESC);;
+              CREATE INDEX ix_mov_cuenta_monto ON movimiento (id_cuenta, monto);;
+              CREATE INDEX ix_mov_descripcion_trgm ON movimiento USING gin (descripcion gin_trgm_ops);;
+              CREATE INDEX ix_mov_ti ON movimiento (id_transferencia_interna) WHERE id_transferencia_interna IS NOT NULL;;
+              CREATE INDEX ix_mov_te ON movimiento (id_transferencia_externa) WHERE id_transferencia_externa IS NOT NULL;;
+
+              -- Idempotencia: UNIQUE (cliente, operacion, clave). Se inserta DENTRO de la
+              -- transaccion de negocio; un duplicado concurrente se bloquea hasta el commit del primero.
+              CREATE TABLE idempotencia (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id_cliente UUID NOT NULL REFERENCES cliente(id),
+                operacion VARCHAR(30) NOT NULL,
+                clave VARCHAR(100) NOT NULL,
+                hash_solicitud CHAR(64) NOT NULL,
+                recurso_id UUID,
+                respuesta JSONB,
+                fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT ux_idempotencia UNIQUE (id_cliente, operacion, clave)
+              );;
+      rollback:
+          - sql:
+              sql: DROP TABLE IF EXISTS idempotencia, movimiento, transferencia_externa, transferencia_internas, cuenta, tipo_cuenta, cliente CASCADE;

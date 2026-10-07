@@ -1,0 +1,44 @@
+import { Injectable, UnauthorizedException, Inject, forwardRef } from '@nestjs/common';
+import { PassportStrategy } from '@nestjs/passport';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { UsersService } from '../../users/users.service';
+import { getJwtSecret } from '../../common/security-config';
+import { AuthService } from '../auth.service';
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor(
+    private readonly usersService: UsersService,
+    @Inject(forwardRef(() => AuthService))
+    private readonly authService: AuthService,
+  ) {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: getJwtSecret(),
+      passReqToCallback: true,
+    });
+  }
+
+  async validate(req: any, payload: { sub: string; email: string; name: string; role: string }) {
+    // 1. La sesion debe existir, estar ACTIVA y vigente en BD (logout = sesion CERRADA) (SCRUM-22 / SCRUM-25)
+    const rawToken = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+    if (!rawToken || !(await this.authService.isSessionActive(rawToken))) {
+      throw new UnauthorizedException(
+        'El token de sesión ha sido revocado (sesión cerrada). Por favor inicia sesión nuevamente.',
+      );
+    }
+
+    // 2. Validar que el usuario exista y esté activo
+    const user = await this.usersService.findById(payload.sub);
+    if (!user) {
+      throw new UnauthorizedException('Token inválido o usuario no encontrado.');
+    }
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    };
+  }
+}

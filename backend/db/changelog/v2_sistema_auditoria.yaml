@@ -1,0 +1,83 @@
+databaseChangeLog:
+  - changeSet:
+      id: v2-crear-sistema-auditoria
+      author: backend_sprint2
+      changes:
+        - sql:
+            dbms: postgresql
+            endDelimiter: ;;
+            splitStatements: true
+            sql: |
+              CREATE TABLE audit_logs (
+                id BIGSERIAL PRIMARY KEY,
+                nombre_tabla VARCHAR(100) NOT NULL,
+                operacion VARCHAR(10) NOT NULL,
+                valor_anterior JSONB,
+                valor_nuevo JSONB,
+                usuario_app VARCHAR(100) DEFAULT 'SYSTEM',
+                fecha TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+              );;
+              CREATE INDEX ix_audit_tabla_fecha ON audit_logs (nombre_tabla, fecha DESC);;
+
+              -- Igual al documento de auditoria, salvo que nunca se persisten secretos
+              -- (password_hash, selfie_url) en el JSON auditado.
+              CREATE OR REPLACE FUNCTION procesar_auditoria()
+              RETURNS TRIGGER AS $$
+              DECLARE
+                v_usuario_app TEXT;
+              BEGIN
+                BEGIN
+                  v_usuario_app := current_setting('request.jwt.claim.username', true);
+                  IF v_usuario_app IS NULL OR v_usuario_app = '' THEN
+                    v_usuario_app := 'SYSTEM_UNKNOWN';
+                  END IF;
+                EXCEPTION WHEN OTHERS THEN
+                  v_usuario_app := 'SYSTEM_UNKNOWN';
+                END;
+
+                IF (TG_OP = 'DELETE') THEN
+                  INSERT INTO audit_logs(nombre_tabla, operacion, valor_anterior, usuario_app)
+                  VALUES (TG_TABLE_NAME, TG_OP, to_jsonb(OLD) - 'password_hash' - 'selfie_url', v_usuario_app);
+                  RETURN OLD;
+                ELSIF (TG_OP = 'UPDATE') THEN
+                  INSERT INTO audit_logs(nombre_tabla, operacion, valor_anterior, valor_nuevo, usuario_app)
+                  VALUES (TG_TABLE_NAME, TG_OP,
+                          to_jsonb(OLD) - 'password_hash' - 'selfie_url',
+                          to_jsonb(NEW) - 'password_hash' - 'selfie_url', v_usuario_app);
+                  RETURN NEW;
+                ELSIF (TG_OP = 'INSERT') THEN
+                  INSERT INTO audit_logs(nombre_tabla, operacion, valor_nuevo, usuario_app)
+                  VALUES (TG_TABLE_NAME, TG_OP, to_jsonb(NEW) - 'password_hash' - 'selfie_url', v_usuario_app);
+                  RETURN NEW;
+                END IF;
+                RETURN NULL;
+              END;
+              $$ LANGUAGE plpgsql;;
+
+              CREATE TRIGGER t_auditoria_cuenta
+                AFTER INSERT OR UPDATE OR DELETE ON cuenta
+                FOR EACH ROW EXECUTE FUNCTION procesar_auditoria();;
+              CREATE TRIGGER t_auditoria_cliente
+                AFTER INSERT OR UPDATE OR DELETE ON cliente
+                FOR EACH ROW EXECUTE FUNCTION procesar_auditoria();;
+              CREATE TRIGGER t_auditoria_transferencia_internas
+                AFTER INSERT OR UPDATE OR DELETE ON transferencia_internas
+                FOR EACH ROW EXECUTE FUNCTION procesar_auditoria();;
+              CREATE TRIGGER t_auditoria_transferencia_externa
+                AFTER INSERT OR UPDATE OR DELETE ON transferencia_externa
+                FOR EACH ROW EXECUTE FUNCTION procesar_auditoria();;
+              CREATE TRIGGER t_auditoria_movimiento
+                AFTER INSERT OR UPDATE OR DELETE ON movimiento
+                FOR EACH ROW EXECUTE FUNCTION procesar_auditoria();;
+      rollback:
+          - sql:
+              splitStatements: true
+              endDelimiter: ;;
+              sql: |
+                DROP TRIGGER IF EXISTS t_auditoria_movimiento ON movimiento;;
+                DROP TRIGGER IF EXISTS t_auditoria_transferencia_externa ON transferencia_externa;;
+                DROP TRIGGER IF EXISTS t_auditoria_transferencia_internas ON transferencia_internas;;
+                DROP TRIGGER IF EXISTS t_auditoria_cliente ON cliente;;
+                DROP TRIGGER IF EXISTS t_auditoria_cuenta ON cuenta;;
+                DROP FUNCTION IF EXISTS procesar_auditoria();;
+                DROP TABLE IF EXISTS audit_logs;;
