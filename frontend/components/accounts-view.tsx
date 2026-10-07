@@ -375,10 +375,23 @@ export function AccountsView() {
     setAccounts((prev) => [newAcc, ...prev])
   }
 
-  function handleCopy(id: string, text: string, e: React.MouseEvent) {
+  async function handleCopy(acc: Account, e: React.MouseEvent) {
     e.stopPropagation()
-    navigator.clipboard.writeText(text)
-    setCopiedId(id)
+    let textToCopy = acc.fullCci || acc.cci
+    if ((!acc.fullCci || acc.cci.includes("*")) && session) {
+      try {
+        const detail = await getAccountDetailApi(session.token, acc.id)
+        if (detail?.account?.fullCci) {
+          textToCopy = detail.account.fullCci
+        } else if (detail?.account?.cci && !detail.account.cci.includes("*")) {
+          textToCopy = detail.account.cci
+        }
+      } catch {
+        // Mantener fallback si no hay conexión
+      }
+    }
+    await navigator.clipboard.writeText(textToCopy)
+    setCopiedId(acc.id)
     setTimeout(() => setCopiedId(null), 2000)
   }
 
@@ -514,7 +527,7 @@ export function AccountsView() {
                   <span className="text-brand-muted tracking-wider">{masked}</span>
                   <button
                     type="button"
-                    onClick={(e) => handleCopy(account.id, account.cci, e)}
+                    onClick={(e) => void handleCopy(account, e)}
                     className="p-1 text-brand-muted hover:text-brand-text transition-colors"
                     title="Copiar CCI completo"
                   >

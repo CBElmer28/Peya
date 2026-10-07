@@ -41,6 +41,11 @@ export function AccountDetailModal({
   const [movements, setMovements] = useState<Movement[]>([])
   const [totalPages, setTotalPages] = useState(1)
   const [totalMovements, setTotalMovements] = useState(0)
+  const [detailedAccount, setDetailedAccount] = useState<Account | null>(null)
+
+  useEffect(() => {
+    setDetailedAccount(null)
+  }, [account?.id])
 
   useEffect(() => {
     if (!open || !account) return
@@ -50,6 +55,9 @@ export function AccountDetailModal({
     getAccountDetailApi(token, account.id, page)
       .then((res) => {
         if (!active) return
+        if (res.account) {
+          setDetailedAccount(res.account)
+        }
         setMovements(res.movements.items)
         setTotalPages(res.movements.totalPages || 1)
         setTotalMovements(res.movements.total || 0)
@@ -68,6 +76,13 @@ export function AccountDetailModal({
 
   if (!open || !account) return null
 
+  const activeAccount = detailedAccount || account
+  const validCciToCopy =
+    activeAccount.fullCci ||
+    (activeAccount.cci && !activeAccount.cci.includes("*") ? activeAccount.cci : "") ||
+    account.fullCci ||
+    account.cci
+
   function handleCopy(text: string) {
     navigator.clipboard.writeText(text)
     setCopied(true)
@@ -75,7 +90,7 @@ export function AccountDetailModal({
   }
 
   // Enmascaramiento según regla HU06 y HU07
-  const rawCci = account.cci || "191-00000000-00"
+  const rawCci = activeAccount.fullCci || activeAccount.cci || "191-00000000-00"
   const parts = rawCci.split("-")
   const maskedCci = parts.length === 3 ? `${parts[0]}-****-${parts[2]}` : `****${rawCci.slice(-4)}`
 
@@ -144,7 +159,7 @@ export function AccountDetailModal({
                 <span>{maskedCci}</span>
                 <button
                   type="button"
-                  onClick={() => handleCopy(rawCci)}
+                  onClick={() => handleCopy(validCciToCopy)}
                   className="rounded-lg p-1 text-brand-muted hover:bg-white/10 hover:text-brand-text"
                   title="Copiar CCI completo"
                 >
