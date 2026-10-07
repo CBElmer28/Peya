@@ -28,6 +28,8 @@ export interface Account {
   maskedNumber: string;
   /** Compatibilidad con el contrato previo: ahora enmascarado (****1234). */
   cci: string;
+  /** CCI completo sin enmascarar, disponible para el titular en detalle de cuenta (HU07). */
+  fullCci?: string;
   status: 'active' | 'blocked';
   openedAt: string;
   trendLabel: string;
@@ -130,7 +132,10 @@ export class AccountsService {
       JOIN tipo_cuenta t ON t.id = c.id_tipo_cuenta
       WHERE c.id = ${accountId}::uuid AND c.id_cliente = ${clienteId}::uuid`;
     if (!rows.length) throw new NotFoundException('Cuenta no encontrada');
-    return toAccountDto(rows[0]);
+    return {
+      ...toAccountDto(rows[0]),
+      fullCci: rows[0].cci,
+    };
   }
 
   /** HU05: apertura transaccional, con proteccion contra duplicados y carreras. */
@@ -174,12 +179,15 @@ export class AccountsService {
       }
 
       const created = await this.insertAccount(tx, user.id, tipo.id, dto.currency);
-      const dtoOut = toAccountDto({
-        ...created,
-        codigo: tipo.codigo,
-        nombre: tipo.nombre,
-        descripcion: 'Cuenta recién abierta',
-      });
+      const dtoOut: Account = {
+        ...toAccountDto({
+          ...created,
+          codigo: tipo.codigo,
+          nombre: tipo.nombre,
+          descripcion: 'Cuenta recién abierta',
+        }),
+        fullCci: created.cci,
+      };
       await completeIdempotent(tx, idem.id, created.id, dtoOut);
       return dtoOut;
     });

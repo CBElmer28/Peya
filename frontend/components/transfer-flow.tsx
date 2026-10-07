@@ -114,6 +114,12 @@ function parseBalanceNumber(balanceStr?: string): number {
       return
     }
 
+    if (clean.includes("*")) {
+      setValidatedRecipient(null)
+      setRecipientError("El número contiene asteriscos (*). Debes ingresar o pegar el CCI completo sin enmascarar.")
+      return
+    }
+
     if (!session) return
     setValidatingCci(true)
     setRecipientError(null)
@@ -121,9 +127,14 @@ function parseBalanceNumber(balanceStr?: string): number {
     try {
       const res = await validateDestinationCciApi(session.token, clean)
       setValidatedRecipient(res)
-    } catch (err) {
+    } catch (err: any) {
       setValidatedRecipient(null)
-      setRecipientError("No se encontró ninguna cuenta activa con este CCI. Verifica el número.")
+      const msg = err?.message || err?.body?.message
+      if (msg === "USE_OWN_TRANSFER" || msg?.includes("tuya")) {
+        setRecipientError("La cuenta destino te pertenece. Usa la pestaña 'Entre mis cuentas'.")
+      } else {
+        setRecipientError("No se encontró ninguna cuenta activa con este CCI. Verifica el número.")
+      }
     } finally {
       setValidatingCci(false)
     }

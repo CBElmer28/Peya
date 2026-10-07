@@ -325,13 +325,16 @@ export async function getRecentRecipientsApi(
   limit = 5,
   page = 1,
 ): Promise<mockApi.RecentRecipient[]> {
-  return fetchApi<mockApi.RecentRecipient[]>(
+  const data = await fetchApi<any>(
     `/transactions/recent-recipients?limit=${limit}&page=${page}`,
     {
       method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
   )
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.items)) return data.items
+  return []
 }
 
 export async function getReceiptApi(

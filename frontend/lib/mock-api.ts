@@ -7,12 +7,16 @@ export type Account = {
   label: string
   type: "savings" | "checking" | "usd"
   balance: string
+  numericBalance?: number
   detail: string
   subtitleDetail: string
   icon: "wallet" | "savings" | "investment"
   currency: "PEN" | "USD"
   cci: string
+  fullCci?: string
+  maskedNumber?: string
   status: "active" | "blocked"
+  openedAt?: string
   trendLabel: string
   trendDirection: "up" | "down"
 }
@@ -199,6 +203,7 @@ export async function getAccounts(token: string): Promise<Account[]> {
       icon: "wallet",
       currency: "PEN",
       cci: "191-3001234567-89",
+      fullCci: "191-3001234567-89",
       status: "active",
       trendLabel: "+4.2% respecto al mes pasado",
       trendDirection: "up",
@@ -213,6 +218,7 @@ export async function getAccounts(token: string): Promise<Account[]> {
       icon: "savings",
       currency: "PEN",
       cci: "191-3009876543-21",
+      fullCci: "191-3009876543-21",
       status: "active",
       trendLabel: "+1.8% respecto al mes pasado",
       trendDirection: "up",
@@ -227,6 +233,7 @@ export async function getAccounts(token: string): Promise<Account[]> {
       icon: "investment",
       currency: "USD",
       cci: "191-3005647382-10",
+      fullCci: "191-3005647382-10",
       status: "active",
       trendLabel: "-2.1% respecto al mes pasado",
       trendDirection: "down",
