@@ -29,6 +29,7 @@ import {
   validateDestinationCciApi,
   getRecentRecipientsApi,
   getReceiptApi,
+  getAccountDetailApi,
 } from "@/lib/api-client"
 import type { Account, RecentRecipient, RecipientValidation, TransferReceipt, TransferResult } from "@/lib/mock-api"
 
@@ -63,6 +64,8 @@ export function TransferFlow() {
   const [transferResult, setTransferResult] = useState<TransferResult | null>(null)
   const [receipt, setReceipt] = useState<TransferReceipt | null>(null)
   const [loadingReceipt, setLoadingReceipt] = useState(false)
+  // CCI completo de las cuentas propias para mostrarlo en la constancia
+  const [fullCcis, setFullCcis] = useState<{ source?: string; destination?: string }>({})
 
   // Cargar cuentas del usuario
   useEffect(() => {
@@ -227,6 +230,15 @@ function parseBalanceNumber(balanceStr?: string): number {
 
       setTransferResult(res)
 
+      // Obtener el CCI completo de las cuentas propias (el listado lo trae enmascarado)
+      const token = session.token
+      const fetchFullCci = (id?: string) =>
+        id ? getAccountDetailApi(token, id).then((d) => d.account.fullCci).catch(() => undefined) : Promise.resolve(undefined)
+      void Promise.all([
+        fetchFullCci(sourceAccount?.id),
+        mode === "internal" ? fetchFullCci(destAccount?.id) : Promise.resolve(undefined),
+      ]).then(([source, destination]) => setFullCcis({ source, destination }))
+
       // Cargar la constancia formal (HU12)
       setLoadingReceipt(true)
       const opId = res.transferId || res.reference || `TX-${Date.now().toString().slice(-6)}`
@@ -276,6 +288,7 @@ function parseBalanceNumber(balanceStr?: string): number {
     setValidatedRecipient(null)
     setTransferResult(null)
     setReceipt(null)
+    setFullCcis({})
     setFormError(null)
     setStep(1)
   }
@@ -724,7 +737,7 @@ function parseBalanceNumber(balanceStr?: string): number {
                 <span className="text-brand-muted">Cuenta de origen:</span>
                 <div className="text-right">
                   <span className="font-bold text-brand-text">{receipt?.source.holder || session?.user.name}</span>
-                  <span className="block font-mono text-brand-muted">{receipt?.source.maskedNumber || sourceAccount?.cci}</span>
+                  <span className="block font-mono text-brand-muted">CCI: {fullCcis.source || receipt?.source.maskedNumber || sourceAccount?.cci}</span>
                 </div>
               </div>
 
@@ -735,7 +748,7 @@ function parseBalanceNumber(balanceStr?: string): number {
                     {receipt?.destination.holder || (mode === "internal" ? session?.user.name : validatedRecipient?.holder)}
                   </span>
                   <span className="block font-mono text-brand-muted">
-                    {receipt?.destination.maskedNumber || (mode === "internal" ? destAccount?.cci : destinationCci)}
+                    CCI: {mode === "internal" ? (fullCcis.destination || receipt?.destination.maskedNumber || destAccount?.cci) : (receipt?.destination.maskedNumber || destinationCci)}
                   </span>
                 </div>
               </div>
