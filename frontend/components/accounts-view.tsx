@@ -5,6 +5,8 @@ import {
   Plus,
   Copy,
   Check,
+  Eye,
+  EyeOff,
   CreditCard,
   Wallet,
   PiggyBank,
@@ -23,7 +25,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
-import { createAccountApi, getAccountsApi } from "@/lib/api-client"
+import { createAccountApi, getAccountsApi, getAccountDetailApi } from "@/lib/api-client"
 import { AccountDetailModal } from "@/components/account-detail-modal"
 import type { Account } from "@/lib/mock-api"
 
@@ -334,6 +336,7 @@ function CreateAccountModal({
   )
 }
 
+
 /**
  * Vista Principal de Cuentas (HU06 + Integración HU05 y HU07)
  */
@@ -346,6 +349,7 @@ export function AccountsView() {
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [selectedAccountForDetail, setSelectedAccountForDetail] = useState<Account | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [revealedCcis, setRevealedCcis] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!session) return
@@ -393,6 +397,34 @@ export function AccountsView() {
     await navigator.clipboard.writeText(textToCopy)
     setCopiedId(acc.id)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  async function handleToggleReveal(acc: Account, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (revealedCcis[acc.id]) {
+      setRevealedCcis((prev) => {
+        const next = { ...prev }
+        delete next[acc.id]
+        return next
+      })
+      return
+    }
+    let full = acc.fullCci
+    if ((!full || acc.cci.includes("*")) && session) {
+      try {
+        const detail = await getAccountDetailApi(session.token, acc.id)
+        if (detail?.account?.fullCci) {
+          full = detail.account.fullCci
+        } else if (detail?.account?.cci && !detail.account.cci.includes("*")) {
+          full = detail.account.cci
+        }
+      } catch {
+        // Mantener fallback
+      }
+    }
+    if (full) {
+      setRevealedCcis((prev) => ({ ...prev, [acc.id]: full }))
+    }
   }
 
   return (
@@ -522,21 +554,37 @@ export function AccountsView() {
                   </div>
                 </div>
 
-                {/* Número CCI Enmascarado (HU06) */}
+                {/* Número CCI (HU06) */}
                 <div className="mt-5 flex items-center justify-between rounded-xl bg-brand-bg/50 px-3 py-2 text-xs font-mono">
-                  <span className="text-brand-muted tracking-wider">{masked}</span>
-                  <button
-                    type="button"
-                    onClick={(e) => void handleCopy(account, e)}
-                    className="p-1 text-brand-muted hover:text-brand-text transition-colors"
-                    title="Copiar CCI completo"
-                  >
-                    {copiedId === account.id ? (
-                      <Check className="h-3.5 w-3.5 text-brand-positive" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" />
-                    )}
-                  </button>
+                  <span className="text-brand-muted tracking-wider truncate max-w-[160px]">
+                    {revealedCcis[account.id] || masked}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => void handleToggleReveal(account, e)}
+                      className="p-1 text-brand-muted hover:text-brand-text transition-colors"
+                      title={revealedCcis[account.id] ? "Ocultar CCI" : "Mostrar CCI completo"}
+                    >
+                      {revealedCcis[account.id] ? (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => void handleCopy(account, e)}
+                      className="p-1 text-brand-muted hover:text-brand-text transition-colors"
+                      title="Copiar CCI completo"
+                    >
+                      {copiedId === account.id ? (
+                        <Check className="h-3.5 w-3.5 text-brand-positive" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Saldo Disponible */}
