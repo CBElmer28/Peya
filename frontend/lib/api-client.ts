@@ -242,6 +242,18 @@ export async function getProfileApi(token: string): Promise<ProfileResponse> {
   })
 }
 
+export async function updateProfileApi(
+  token: string,
+  userId: string,
+  payload: { name: string; email: string },
+): Promise<ProfileResponse> {
+  return fetchApi<ProfileResponse>(`/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  })
+}
+
 export async function forgotPasswordApi(identifier: string) {
   return fetchApi<{ success: boolean; message: string }>("/auth/forgot-password", {
     method: "POST",

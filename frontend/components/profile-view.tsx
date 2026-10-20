@@ -1,9 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CalendarDays, CreditCard, Mail, Phone, RefreshCw, ShieldCheck, Smartphone, Laptop, User } from "lucide-react"
+import { CalendarDays, Check, CreditCard, Mail, Phone, RefreshCw, ShieldCheck, Smartphone, Laptop, User, X } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { getProfileApi, type ProfileResponse } from "@/lib/api-client"
+import { getProfileApi, updateProfileApi, type ProfileResponse } from "@/lib/api-client"
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/)
@@ -56,6 +56,13 @@ export function ProfileView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [editName, setEditName] = useState("")
+  const [editEmail, setEditEmail] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string }>({})
+  const [editError, setEditError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
   const [emailNotifications, setEmailNotifications] = useState(true)
   const [pushNotifications, setPushNotifications] = useState(false)
@@ -102,6 +109,64 @@ export function ProfileView() {
         year: "numeric",
       })
     : unavailable
+
+  function openEditor() {
+      if (!profile) return
+      setEditName(profile.name)
+      setEditEmail(profile.email)
+      setFieldErrors({})
+      setEditError(null)
+      setSaved(false)
+      setEditing(true)
+  }
+
+  function closeEditor() {
+      setEditing(false)
+      setFieldErrors({})
+      setEditError(null)
+  }
+
+  async function handleProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
+      event.preventDefault()
+      if (!profile || !session) return
+
+      const nextErrors: { name?: string; email?: string } = {}
+      const name = editName.trim()
+      const email = editEmail.trim()
+      if (!name) nextErrors.name = "Ingresa tu nombre completo."
+      else if (name.length < 2) nextErrors.name = "El nombre debe tener al menos 2 caracteres."
+      if (!email) nextErrors.email = "Ingresa tu correo electrónico."
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        nextErrors.email = "Escribe un correo válido, por ejemplo nombre@dominio.com."
+      }
+
+      setFieldErrors(nextErrors)
+      setEditError(null)
+      setSaved(false)
+      if (Object.keys(nextErrors).length > 0) return
+
+      setSaving(true)
+      try {
+        const updatedProfile = await updateProfileApi(session.token, profile.id, { name, email })
+        setProfile(updatedProfile)
+        setEditing(false)
+        setSaved(true)
+      } catch (err) {
+        console.error("Error actualizando el perfil:", err)
+        const statusCode = typeof err === "object" && err !== null && "statusCode" in err
+          ? err.statusCode
+          : undefined
+        setEditError(
+          statusCode === 401 || statusCode === 403
+            ? "No tienes permisos para guardar estos cambios. Contacta con soporte si necesitas actualizar tus datos."
+            : err instanceof Error
+              ? `No se pudieron guardar los cambios: ${err.message}`
+              : "No se pudieron guardar los cambios. Inténtalo nuevamente.",
+        )
+      } finally {
+        setSaving(false)
+      }
+  }
 
   return (
     <section className="space-y-6" aria-labelledby="profile-title">
@@ -159,12 +224,130 @@ export function ProfileView() {
                 </div>
               </div>
 
-              <button type="button" className="btn-secondary inline-flex items-center gap-2 self-start sm:self-auto">
-                <User className="h-4 w-4" aria-hidden="true" />
-                Editar perfil
-              </button>
+              {!editing ? (
+                <button type="button" onClick={openEditor} className="btn-secondary inline-flex items-center gap-2 self-start sm:self-auto">
+                  <User className="h-4 w-4" aria-hidden="true" />
+                  Editar perfil
+                </button>
+              ) : null}
             </div>
+            {editing ? (
+              <form onSubmit={handleProfileSubmit} noValidate className="mt-6 border-t border-white/10 pt-5">
+                <h3 className="text-base font-semibold text-brand-text">Editar datos personales</h3>
+                <p className="mt-1 text-sm text-brand-muted">
+                  Actualiza tu nombre y correo. El DNI no se puede modificar; el teléfono no está habilitado para edición.
+                </p>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="profile-edit-name" className="block text-sm font-medium text-brand-text">
+                      Nombre completo
+                    </label>
+                    <input
+                      id="profile-edit-name"
+                      name="name"
+                      autoComplete="name"
+                      value={editName}
+                      onChange={(event) => setEditName(event.target.value)}
+                      onBlur={() => {
+                        const value = editName.trim()
+                        setFieldErrors((current) => ({
+                          ...current,
+                          name: !value
+                            ? "Ingresa tu nombre completo."
+                            : value.length < 2
+                              ? "El nombre debe tener al menos 2 caracteres."
+                              : undefined,
+                        }))
+                      }}
+                      maxLength={150}
+                      aria-invalid={Boolean(fieldErrors.name)}
+                      aria-describedby={fieldErrors.name ? "profile-edit-name-error" : undefined}
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-accent"
+                    />
+                    {fieldErrors.name ? (
+                      <p id="profile-edit-name-error" className="mt-1 text-xs text-brand-negative">{fieldErrors.name}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <label htmlFor="profile-edit-email" className="block text-sm font-medium text-brand-text">
+                      Correo electrónico
+                    </label>
+                    <input
+                      id="profile-edit-email"
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      value={editEmail}
+                      onChange={(event) => setEditEmail(event.target.value)}
+                      onBlur={() => {
+                        const value = editEmail.trim()
+                        setFieldErrors((current) => ({
+                          ...current,
+                          email: !value
+                            ? "Ingresa tu correo electrónico."
+                            : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+                              ? "Escribe un correo válido, por ejemplo nombre@dominio.com."
+                              : undefined,
+                        }))
+                      }}
+                      maxLength={255}
+                      aria-invalid={Boolean(fieldErrors.email)}
+                      aria-describedby={fieldErrors.email ? "profile-edit-email-error" : undefined}
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-accent"
+                    />
+                    {fieldErrors.email ? (
+                      <p id="profile-edit-email-error" className="mt-1 text-xs text-brand-negative">{fieldErrors.email}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <label htmlFor="profile-edit-phone" className="block text-sm font-medium text-brand-text">
+                      Teléfono
+                    </label>
+                    <input
+                      id="profile-edit-phone"
+                      value={profile.phone || unavailable}
+                      readOnly
+                      aria-describedby="profile-edit-phone-help"
+                      className="mt-1 w-full cursor-not-allowed rounded-lg border border-white/10 bg-brand-surface-2 px-3 py-2 text-sm text-brand-muted"
+                    />
+                    <p id="profile-edit-phone-help" className="mt-1 text-xs text-brand-muted">
+                      El servicio de perfil actual no permite actualizar este dato.
+                    </p>
+                  </div>
+                </div>
+                {editError ? (
+                  <p role="alert" className="mt-4 rounded-lg border border-brand-negative/30 bg-brand-negative/10 px-3 py-2 text-sm text-brand-negative">
+                    {editError}
+                  </p>
+                ) : null}
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 rounded-lg bg-brand-accent px-4 py-2 text-sm font-semibold text-brand-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                    {saving ? "Guardando…" : "Guardar cambios"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeEditor}
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-brand-text transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            ) : null}
           </section>
+          {saved ? (
+            <p role="status" className="flex items-center gap-2 rounded-lg border border-brand-positive/30 bg-brand-positive/10 px-4 py-3 text-sm text-brand-positive">
+              <Check className="h-4 w-4" aria-hidden="true" />
+              Tus datos se actualizaron correctamente.
+            </p>
+          ) : null}
 
           <div className="grid gap-6 lg:grid-cols-2">
             <SectionCard title="Datos personales">
