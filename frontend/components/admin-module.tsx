@@ -195,18 +195,22 @@ function ClientDialog({
   open,
   mode,
   initialClient,
+  existingClients,
   onClose,
   onSubmit,
 }: {
   open: boolean
   mode: ClientModalMode
   initialClient: Client | null
+  existingClients: Client[]
   onClose: () => void
   onSubmit: (payload: ClientFormState) => Promise<void>
 }) {
   const [form, setForm] = useState<ClientFormState>(getInitialForm())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string }>({})
+  const [confirmSensitive, setConfirmSensitive] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const firstInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -214,6 +218,8 @@ function ClientDialog({
     if (!open) return
     setError(null)
     setLoading(false)
+    setFieldErrors({})
+    setConfirmSensitive(false)
     setForm(
       initialClient
         ? { name: initialClient.name, email: initialClient.email, role: initialClient.role, status: initialClient.status }
@@ -255,16 +261,7 @@ function ClientDialog({
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  async function handleSubmit() {
-    if (!form.name.trim()) {
-      setError("Ingresa el nombre completo.")
-      return
-    }
-    if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) {
-      setError("Ingresa un correo válido.")
-      return
-    }
-
+  async function saveForm() {
     setLoading(true)
     setError(null)
     try {
@@ -275,11 +272,46 @@ function ClientDialog({
         status: form.status,
       })
       onClose()
-    } catch {
-      setError(mode === "create" ? "No se pudo crear el usuario." : "No se pudo actualizar el usuario.")
+    } catch (err) {
+      console.error(mode === "create" ? "Error creando cliente:" : "Error actualizando cliente:", err)
+      setError(
+        err instanceof Error
+          ? err.message
+          : mode === "create"
+            ? "No se pudo crear el cliente. Revisa los datos e inténtalo nuevamente."
+            : "No se pudo actualizar el cliente. Revisa los datos e inténtalo nuevamente.",
+      )
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleSubmit() {
+    const name = form.name.trim()
+    const email = form.email.trim()
+    const nextErrors: { name?: string; email?: string } = {}
+    if (!name) nextErrors.name = "Ingresa el nombre completo."
+    else if (name.length < 2) nextErrors.name = "El nombre debe tener al menos 2 caracteres."
+    else if (name.length > 100) nextErrors.name = "El nombre no puede superar los 100 caracteres."
+    if (!email) nextErrors.email = "Ingresa el correo electrónico."
+    else if (email.length > 255) nextErrors.email = "El correo no puede superar los 255 caracteres."
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) nextErrors.email = "Ingresa un correo electrónico válido."
+    else if (existingClients.some((client) =>
+      client.id !== initialClient?.id && client.email.toLowerCase() === email.toLowerCase(),
+    )) {
+      nextErrors.email = "Ya existe un usuario registrado con este correo."
+    }
+    setFieldErrors(nextErrors)
+    setError(null)
+    if (Object.keys(nextErrors).length > 0) return
+
+    const sensitiveChange = mode === "edit" && initialClient !== null &&
+      (form.role !== initialClient.role || form.status !== initialClient.status)
+    if (sensitiveChange) {
+      setConfirmSensitive(true)
+      return
+    }
+    await saveForm()
   }
 
   return (
@@ -311,26 +343,70 @@ function ClientDialog({
           </button>
         </div>
 
+        {confirmSensitive ? (
+          <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4" role="alertdialog" aria-labelledby="client-sensitive-change-title">
+            <h4 id="client-sensitive-change-title" className="font-semibold text-brand-text">
+              Confirma los cambios sensibles
+            </h4>
+            <p className="mt-2 text-sm text-brand-muted">
+              {initialClient && form.role !== initialClient.role
+                ? `El rol cambiará de ${getClientRoleLabel(initialClient.role)} a ${getClientRoleLabel(form.role)}. `
+                : ""}
+              {initialClient && form.status !== initialClient.status
+                ? `El estado cambiará de ${initialClient.status === "active" ? "Activo" : "Inactivo"} a ${form.status === "active" ? "Activo" : "Inactivo"}.`
+                : ""}
+              {" "}Este cambio puede modificar el acceso del usuario.
+            </p>
+            {error ? (
+              <p role="alert" className="mt-3 rounded-xl bg-brand-negative/15 px-4 py-3 text-sm font-medium text-brand-negative">
+                {error}
+              </p>
+            ) : null}
+            <div className="mt-4 flex justify-end gap-3">
+              <button type="button" onClick={() => { setConfirmSensitive(false); setError(null) }} disabled={loading} className="btn-secondary">
+                Volver a editar
+              </button>
+              <button type="button" onClick={() => void saveForm()} disabled={loading} className="btn-primary disabled:opacity-70">
+                {loading ? "Guardando…" : "Confirmar y guardar"}
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="mt-5 space-y-4">
           <label className="flex flex-col gap-1.5 text-sm text-brand-muted">
             Nombre completo
             <input
               ref={firstInputRef}
               value={form.name}
-              onChange={(event) => updateField("name", event.target.value)}
+              onChange={(event) => {
+                updateField("name", event.target.value)
+                setFieldErrors((current) => ({ ...current, name: undefined }))
+              }}
+              maxLength={100}
+              aria-invalid={Boolean(fieldErrors.name)}
+              aria-describedby={fieldErrors.name ? "client-name-error" : undefined}
               className="input-base"
               placeholder="Nombre y apellido"
             />
+            {fieldErrors.name ? <span id="client-name-error" className="text-xs text-brand-negative">{fieldErrors.name}</span> : null}
           </label>
 
           <label className="flex flex-col gap-1.5 text-sm text-brand-muted">
             Correo electrónico
             <input
+              type="email"
               value={form.email}
-              onChange={(event) => updateField("email", event.target.value)}
+              onChange={(event) => {
+                updateField("email", event.target.value)
+                setFieldErrors((current) => ({ ...current, email: undefined }))
+              }}
+              maxLength={255}
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby={fieldErrors.email ? "client-email-error" : undefined}
               className="input-base"
               placeholder="usuario@peya.com"
             />
+            {fieldErrors.email ? <span id="client-email-error" className="text-xs text-brand-negative">{fieldErrors.email}</span> : null}
           </label>
 
           <div>
@@ -407,6 +483,7 @@ function ClientDialog({
             )}
           </button>
         </div>
+        )}
       </div>
     </div>
   )
@@ -415,11 +492,15 @@ function ClientDialog({
 function DeleteClientDialog({
   open,
   client,
+  loading,
+  error,
   onClose,
   onConfirm,
 }: {
   open: boolean
   client: Client | null
+  loading: boolean
+  error: string | null
   onClose: () => void
   onConfirm: () => Promise<void>
 }) {
@@ -480,19 +561,116 @@ function DeleteClientDialog({
           </div>
         ) : null}
 
+        {error ? (
+          <p role="alert" className="mt-4 rounded-xl bg-brand-negative/15 px-4 py-3 text-sm font-medium text-brand-negative">
+            {error}
+          </p>
+        ) : null}
+
         <div className="mt-6 flex items-center justify-end gap-3">
-          <button ref={firstButtonRef} type="button" onClick={onClose} className="btn-secondary">
+          <button ref={firstButtonRef} type="button" onClick={onClose} disabled={loading} className="btn-secondary disabled:opacity-60">
             Cancelar
           </button>
           <button
             type="button"
             onClick={() => void onConfirm()}
-            className="rounded-xl bg-brand-negative px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:opacity-90"
+            disabled={loading}
+            className="rounded-xl bg-brand-negative px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Sí, eliminar
+            {loading ? "Eliminando…" : "Sí, eliminar"}
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ClientDetailsDialog({
+  client,
+  onClose,
+  onEdit,
+}: {
+  client: Client | null
+  onClose: () => void
+  onEdit: (client: Client) => void
+}) {
+  useEffect(() => {
+    if (!client) return
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose()
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [client, onClose])
+
+  if (!client) return null
+
+  const registeredAt = client.registeredAt
+    ? new Date(`${client.registeredAt}T00:00:00`).toLocaleDateString("es-PE", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : "No disponible"
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <button type="button" aria-label="Cerrar detalle" className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="client-details-title"
+        className="relative z-10 w-full max-w-lg rounded-2xl border border-white/10 bg-brand-surface2 p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 id="client-details-title" className="text-lg font-bold text-brand-text">Detalle del cliente</h3>
+            <p className="mt-1 text-sm text-brand-muted">Información de la cuenta seleccionada.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded-lg border border-white/10 p-2 text-brand-muted hover:bg-white/5">
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Nombre completo</dt>
+            <dd className="mt-1 break-words text-sm font-medium text-brand-text">{client.name}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Correo electrónico</dt>
+            <dd className="mt-1 break-words text-sm font-medium text-brand-text">{client.email}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Rol</dt>
+            <dd className="mt-1"><RoleBadge role={client.role} /></dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Estado</dt>
+            <dd className="mt-1">
+              <StatusBadge label={client.status === "active" ? "Activo" : "Inactivo"} tone={client.status === "active" ? "positive" : "negative"} />
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Fecha de registro</dt>
+            <dd className="mt-1 text-sm font-medium capitalize text-brand-text">{registeredAt}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Identificador</dt>
+            <dd className="mt-1 break-all font-mono text-xs text-brand-light">{client.id}</dd>
+          </div>
+        </dl>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="btn-secondary">Cerrar</button>
+          <button
+            type="button"
+            onClick={() => onEdit(client)}
+            className="btn-primary inline-flex items-center gap-2"
+          >
+            <Pencil className="h-4 w-4" aria-hidden="true" />
+            Editar cliente
+          </button>
+        </div>
+      </section>
     </div>
   )
 }
@@ -698,8 +876,11 @@ function ClientManagement() {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState<ClientModalMode>("create")
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [detailsClient, setDetailsClient] = useState<Client | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [operationResult, setOperationResult] = useState<{ tone: "success" | "error"; message: string } | null>(null)
   const [focusReturnTarget, setFocusReturnTarget] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -754,6 +935,7 @@ function ClientManagement() {
 
   function openCreateModal(trigger: HTMLElement | null) {
     setFocusReturnTarget(trigger)
+    setOperationResult(null)
     setSelectedClient(null)
     setModalMode("create")
     setModalOpen(true)
@@ -761,6 +943,7 @@ function ClientManagement() {
 
   function openEditModal(client: Client, trigger: HTMLElement | null) {
     setFocusReturnTarget(trigger)
+    setOperationResult(null)
     setSelectedClient(client)
     setModalMode("edit")
     setModalOpen(true)
@@ -774,10 +957,13 @@ function ClientManagement() {
 
   function openDeleteModal(client: Client, trigger: HTMLElement | null) {
     setFocusReturnTarget(trigger)
+    setDeleteError(null)
+    setOperationResult(null)
     setDeleteTarget(client)
   }
 
   function closeDeleteModal() {
+    setDeleteError(null)
     setDeleteTarget(null)
     queueMicrotask(() => focusReturnTarget?.focus())
   }
@@ -801,9 +987,13 @@ function ClientManagement() {
         role: payload.role,
       })
       setClients((prev) => prev.map((client) => (client.id === optimisticId ? created : client)))
-    } catch {
+      setOperationResult({ tone: "success", message: `Se creó correctamente el usuario ${created.name}.` })
+    } catch (err) {
       setClients((prev) => prev.filter((client) => client.id !== optimisticId))
-      throw new Error("CREATE_FAILED")
+      console.error("Error creando cliente:", err)
+      const message = "No se pudo crear el cliente. Verifica los datos y vuelve a intentarlo."
+      setOperationResult({ tone: "error", message })
+      throw new Error(message)
     }
   }
 
@@ -815,9 +1005,13 @@ function ClientManagement() {
     try {
       const updated = await updateClientApi(session.token, previous.id, payload)
       setClients((prev) => prev.map((client) => (client.id === previous.id ? updated : client)))
-    } catch {
+      setOperationResult({ tone: "success", message: `Se actualizaron correctamente los datos de ${updated.name}.` })
+    } catch (err) {
       setClients((prev) => prev.map((client) => (client.id === previous.id ? previous : client)))
-      throw new Error("UPDATE_FAILED")
+      console.error("Error actualizando cliente:", err)
+      const message = "No se pudieron guardar los cambios. Verifica los datos y vuelve a intentarlo."
+      setOperationResult({ tone: "error", message })
+      throw new Error(message)
     }
   }
 
@@ -825,12 +1019,18 @@ function ClientManagement() {
     if (!session || !deleteTarget) return
     setDeleteLoading(true)
     const target = deleteTarget
+    setDeleteError(null)
     setClients((prev) => prev.filter((client) => client.id !== target.id))
     try {
       await deleteClientApi(session.token, target.id)
+      setOperationResult({ tone: "success", message: `Se eliminó correctamente el usuario ${target.name}.` })
       closeDeleteModal()
-    } catch {
+    } catch (err) {
       setClients((prev) => [target, ...prev])
+      console.error("Error eliminando cliente:", err)
+      const message = "No se pudo eliminar el usuario. La lista se restauró; puedes intentarlo nuevamente."
+      setDeleteError(message)
+      setOperationResult({ tone: "error", message })
     } finally {
       setDeleteLoading(false)
     }
@@ -848,6 +1048,20 @@ function ClientManagement() {
           + Nuevo usuario
         </button>
       </div>
+
+      {operationResult ? (
+        <div
+          role={operationResult.tone === "error" ? "alert" : "status"}
+          className={cn(
+            "rounded-xl border px-4 py-3 text-sm",
+            operationResult.tone === "success"
+              ? "border-brand-positive/30 bg-brand-positive/10 text-brand-positive"
+              : "border-brand-negative/30 bg-brand-negative/10 text-brand-negative",
+          )}
+        >
+          {operationResult.message}
+        </div>
+      ) : null}
 
       <div className="rounded-xl bg-brand-surface2">
         <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:justify-between">
@@ -951,6 +1165,15 @@ function ClientManagement() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
+                          onClick={() => setDetailsClient(c)}
+                          aria-label={`Ver detalle de ${c.name}`}
+                          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-light transition-colors hover:bg-white/10"
+                        >
+                          <Eye className="h-4 w-4" aria-hidden="true" />
+                          Ver
+                        </button>
+                        <button
+                          type="button"
                           onClick={(event) => openEditModal(c, event.currentTarget)}
                           className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-light transition-colors hover:bg-white/10"
                         >
@@ -983,6 +1206,7 @@ function ClientManagement() {
         open={modalOpen}
         mode={modalMode}
         initialClient={selectedClient}
+        existingClients={clients}
         onClose={closeModal}
         onSubmit={async (payload) => {
           if (modalMode === "create") {
@@ -996,8 +1220,18 @@ function ClientManagement() {
       <DeleteClientDialog
         open={deleteTarget !== null}
         client={deleteTarget}
+        loading={deleteLoading}
+        error={deleteError}
         onClose={closeDeleteModal}
         onConfirm={handleConfirmDelete}
+      />
+      <ClientDetailsDialog
+        client={detailsClient}
+        onClose={() => setDetailsClient(null)}
+        onEdit={(client) => {
+          setDetailsClient(null)
+          openEditModal(client, null)
+        }}
       />
     </div>
   )
