@@ -15,10 +15,12 @@ import {
   Loader2,
   User,
   X,
+  UserPlus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
 import {
+  getProfileApi,
   getClientsApi,
   createClientApi,
   updateClientApi,
@@ -33,8 +35,22 @@ import type {
   ClientRole,
   ClientStatus,
 } from "@/lib/mock-api"
+import type { ProfileResponse } from "@/lib/api-client"
 
-type AdminTab = "dashboard" | "clients"
+type AdminTab = "dashboard" | "clients" | "subadmins"
+
+type SubadminRole = "SOPORTE"
+
+type SubadminDraft = {
+  id: number
+  name: string
+  email: string
+  role: SubadminRole
+}
+
+const PERMITTED_SUBADMIN_ROLES: { value: SubadminRole; label: string; description: string }[] = [
+  { value: "SOPORTE", label: "Soporte", description: "Consulta de clientes y cuentas supervisadas" },
+]
 
 const PAGE_SIZE = 5
 
@@ -987,12 +1003,266 @@ function ClientManagement() {
   )
 }
 
+function SubadminManagement() {
+  const { session } = useAuth()
+  const [profile, setProfile] = useState<ProfileResponse | null>(null)
+  const [loadingProfile, setLoadingProfile] = useState(true)
+  const [profileError, setProfileError] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [role, setRole] = useState<SubadminRole | "">("")
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string; role?: string }>({})
+  const [drafts, setDrafts] = useState<SubadminDraft[]>([])
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    if (!session) {
+      setProfile(null)
+      setProfileError(true)
+      setLoadingProfile(false)
+      return () => {
+        active = false
+      }
+    }
+
+    setLoadingProfile(true)
+    setProfileError(false)
+    getProfileApi(session.token)
+      .then((data) => {
+        if (active) setProfile(data)
+      })
+      .catch((error) => {
+        console.error("Error verificando permisos de subadministradores:", error)
+        if (active) setProfileError(true)
+      })
+      .finally(() => {
+        if (active) setLoadingProfile(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [session, retryCount])
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const errors: typeof fieldErrors = {}
+    const cleanName = name.trim()
+    const cleanEmail = email.trim()
+    if (!cleanName) errors.name = "Ingresa el nombre completo."
+    else if (cleanName.length < 2) errors.name = "El nombre debe tener al menos 2 caracteres."
+    if (!cleanEmail) errors.email = "Ingresa el correo electrónico."
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      errors.email = "Escribe un correo válido, por ejemplo nombre@dominio.com."
+    }
+    if (!role || !PERMITTED_SUBADMIN_ROLES.some((option) => option.value === role)) {
+      errors.role = "Selecciona uno de los roles habilitados."
+    }
+    if (drafts.some((draft) => draft.email.toLowerCase() === cleanEmail.toLowerCase())) {
+      errors.email = "Ya existe un borrador con este correo."
+    }
+    setFieldErrors(errors)
+    setNotice(null)
+    if (Object.keys(errors).length > 0 || !role) return
+
+    setDrafts((current) => [
+      ...current,
+      { id: Date.now(), name: cleanName, email: cleanEmail, role },
+    ])
+    setName("")
+    setEmail("")
+    setRole("")
+    setFieldErrors({})
+    setNotice("Borrador agregado. Aún no se creó una cuenta ni se guardaron los cambios en el servidor.")
+  }
+
+  if (loadingProfile) {
+    return (
+      <div className="rounded-xl border border-white/10 bg-brand-surface p-6" role="status">
+        <div className="h-24 animate-pulse rounded-lg bg-brand-surface-2" />
+        <span className="sr-only">Verificando permisos de administrador…</span>
+      </div>
+    )
+  }
+
+  if (profileError) {
+    return (
+      <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
+        <p className="text-sm font-semibold text-brand-text">
+          {session ? "No pudimos verificar tus permisos." : "Inicia sesión para gestionar subadministradores."}
+        </p>
+        {session ? (
+          <button
+            type="button"
+            onClick={() => setRetryCount((count) => count + 1)}
+            className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-brand-text hover:bg-white/5"
+          >
+            Reintentar
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (profile?.role !== "admin") {
+    return (
+      <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5" role="alert">
+        <h2 className="font-semibold text-brand-text">Acceso restringido</h2>
+        <p className="mt-1 text-sm text-brand-muted">
+          Solo un administrador autenticado puede registrar subadministradores y asignar roles.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <section className="space-y-6" aria-labelledby="subadmins-title">
+      <div>
+        <h2 id="subadmins-title" className="text-2xl font-bold text-brand-text">
+          Gestión de subadministradores
+        </h2>
+        <p className="mt-1 text-sm text-brand-muted">
+          Prepara el registro y asigna únicamente roles disponibles para tu cuenta.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-brand-accent/20 bg-brand-accent/10 p-4 text-sm text-brand-light">
+        El servicio actual no ofrece un endpoint para registrar subadministradores ni asignarles roles. Los registros de
+        esta pantalla son borradores locales y no se guardan en el servidor.
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate className="rounded-xl border border-white/10 bg-brand-surface p-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-accent/15 text-brand-accent">
+            <UserPlus className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h3 className="font-semibold text-brand-text">Registrar subadministrador</h3>
+            <p className="text-xs text-brand-muted">Completa sus datos y selecciona un rol permitido.</p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="subadmin-name" className="block text-sm font-medium text-brand-text">
+              Nombre completo
+            </label>
+            <input
+              id="subadmin-name"
+              autoComplete="name"
+              maxLength={100}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              aria-invalid={Boolean(fieldErrors.name)}
+              aria-describedby={fieldErrors.name ? "subadmin-name-error" : undefined}
+              className="input-base mt-1"
+              placeholder="Nombre y apellido"
+            />
+            {fieldErrors.name ? <p id="subadmin-name-error" className="mt-1 text-xs text-brand-negative">{fieldErrors.name}</p> : null}
+          </div>
+
+          <div>
+            <label htmlFor="subadmin-email" className="block text-sm font-medium text-brand-text">
+              Correo electrónico
+            </label>
+            <input
+              id="subadmin-email"
+              type="email"
+              autoComplete="email"
+              maxLength={255}
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby={fieldErrors.email ? "subadmin-email-error" : undefined}
+              className="input-base mt-1"
+              placeholder="usuario@peya.com"
+            />
+            {fieldErrors.email ? <p id="subadmin-email-error" className="mt-1 text-xs text-brand-negative">{fieldErrors.email}</p> : null}
+          </div>
+        </div>
+
+        <fieldset className="mt-5">
+          <legend className="text-sm font-medium text-brand-text">Rol asignado</legend>
+          {fieldErrors.role ? <p className="mt-1 text-xs text-brand-negative">{fieldErrors.role}</p> : null}
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            {PERMITTED_SUBADMIN_ROLES.map((option) => {
+              const selected = role === option.value
+              return (
+                <label
+                  key={option.value}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors",
+                    selected ? "border-brand-accent bg-brand-accent/10" : "border-white/10 bg-brand-bg hover:bg-white/5",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="subadmin-role"
+                    value={option.value}
+                    checked={selected}
+                    onChange={() => {
+                      setRole(option.value)
+                      setFieldErrors((current) => ({ ...current, role: undefined }))
+                    }}
+                    className="mt-1 accent-brand-accent"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-brand-text">{option.label}</span>
+                    <span className="mt-1 block text-xs text-brand-muted">{option.description}</span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </fieldset>
+
+        {notice ? (
+          <p role="status" className="mt-4 rounded-lg border border-brand-accent/20 bg-brand-accent/10 px-3 py-2 text-sm text-brand-light">
+            {notice}
+          </p>
+        ) : null}
+
+        <div className="mt-5 flex justify-end">
+          <button type="submit" className="btn-primary inline-flex items-center gap-2">
+            <UserPlus className="h-4 w-4" aria-hidden="true" />
+            Agregar borrador
+          </button>
+        </div>
+      </form>
+
+      <section className="rounded-xl border border-white/10 bg-brand-surface p-5" aria-labelledby="subadmin-drafts-title">
+        <h3 id="subadmin-drafts-title" className="font-semibold text-brand-text">Borradores de esta sesión</h3>
+        {drafts.length === 0 ? (
+          <p className="mt-3 text-sm text-brand-muted">Aún no hay subadministradores preparados.</p>
+        ) : (
+          <ul className="mt-4 divide-y divide-white/10">
+            {drafts.map((draft) => (
+              <li key={draft.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-medium text-brand-text">{draft.name}</p>
+                  <p className="text-sm text-brand-muted">{draft.email}</p>
+                </div>
+                <span className="inline-flex w-fit items-center rounded-full bg-brand-accent/15 px-2.5 py-1 text-xs font-semibold text-brand-accent">
+                  {PERMITTED_SUBADMIN_ROLES.find((option) => option.value === draft.role)?.label ?? draft.role}
+                  {" · Pendiente de integración"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </section>
+  )
+}
+
 export function AdminModule() {
   const [tab, setTab] = useState<AdminTab>("dashboard")
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2 rounded-xl bg-brand-surface p-1.5">
+      <div className="flex flex-col gap-1.5 rounded-xl bg-brand-surface p-1.5 sm:flex-row">
         <button
           type="button"
           onClick={() => setTab("dashboard")}
@@ -1013,9 +1283,20 @@ export function AdminModule() {
         >
           Gestión de usuarios
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("subadmins")}
+          aria-current={tab === "subadmins" ? "page" : undefined}
+          className={cn(
+            "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
+            tab === "subadmins" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
+          )}
+        >
+          Subadministradores
+        </button>
       </div>
 
-      {tab === "dashboard" ? <AdminDashboard /> : <ClientManagement />}
+      {tab === "dashboard" ? <AdminDashboard /> : tab === "clients" ? <ClientManagement /> : <SubadminManagement />}
     </div>
   )
 }
