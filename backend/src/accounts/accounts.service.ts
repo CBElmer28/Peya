@@ -52,6 +52,10 @@ export interface AppNotification {
   detail: string;
   unread: boolean;
   type: 'transfer' | 'login' | 'document' | 'payment' | 'alert' | 'deposit';
+  transferOrigin?: string;
+  amount?: string;
+  currency?: 'PEN' | 'USD';
+  date?: string;
 }
 
 interface CuentaRow {
@@ -101,7 +105,17 @@ export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
   private notifications: AppNotification[] = [
-    { id: 'not-1', title: 'Pago recibido de Cliente ACME', detail: 'Hace 10 min', unread: true, type: 'payment' },
+    {
+      id: 'not-1',
+      title: 'Transferencia recibida de Cliente ACME',
+      detail: 'Transferencia recibida',
+      unread: true,
+      type: 'transfer',
+      transferOrigin: 'Cliente ACME · Cuenta **** 4821',
+      amount: '1250.00',
+      currency: 'PEN',
+      date: '2026-08-30T10:20:00-05:00',
+    },
     { id: 'not-2', title: 'Recordatorio: factura por vencer', detail: 'Hace 1 hora', unread: false, type: 'alert' },
     { id: 'not-3', title: 'Nuevo dispositivo inició sesión', detail: 'Hace 3 horas', unread: true, type: 'login' },
     { id: 'not-4', title: 'Tu reporte mensual está listo', detail: 'Ayer', unread: false, type: 'document' },

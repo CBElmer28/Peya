@@ -27,10 +27,14 @@ export function DashboardView() {
     }
 
     let active = true
-    getNotificationsApi(session.token).then((items) => {
-      if (!active) return
-      setUnreadNotificationsCount(items.filter((item) => item.unread).length)
-    })
+    getNotificationsApi(session.token)
+      .then((items) => {
+        if (!active) return
+        setUnreadNotificationsCount(items.filter((item) => item.unread).length)
+      })
+      .catch((error) => {
+        console.error("Error cargando el contador de notificaciones:", error)
+      })
 
     return () => {
       active = false
@@ -73,6 +77,11 @@ export function DashboardView() {
             <TransferFlow />
           ) : view === "admin" ? (
             <AdminModule />
+          ) : view === "notifications" ? (
+            <NotificationsPanel
+              compact={false}
+              onUnreadCountChange={setUnreadNotificationsCount}
+            />
           ) : (
             <>
               <AccountSummary />
@@ -82,7 +91,10 @@ export function DashboardView() {
                   <RecentMovements />
                 </div>
                 <div className="lg:col-span-1">
-                  <NotificationsPanel onUnreadCountChange={setUnreadNotificationsCount} />
+                  <NotificationsPanel
+                    onUnreadCountChange={setUnreadNotificationsCount}
+                    onNavigate={handleNavigate}
+                  />
                 </div>
               </div>
             </>
