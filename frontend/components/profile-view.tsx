@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
-import { CalendarDays, CreditCard, Mail, ShieldCheck, Smartphone, Laptop, User } from "lucide-react"
+import { useEffect, useState } from "react"
+import { CalendarDays, CreditCard, Mail, Phone, RefreshCw, ShieldCheck, Smartphone, Laptop, User } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
+import { getProfileApi, type ProfileResponse } from "@/lib/api-client"
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/)
@@ -51,13 +52,56 @@ function SectionCard({
 
 export function ProfileView() {
   const { session } = useAuth()
-  const fullName = session?.user.name ?? "Usuario Peya"
-  const email = session?.user.email ?? "usuario@peya.com"
-  const initials = getInitials(fullName)
+  const [profile, setProfile] = useState<ProfileResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
   const [emailNotifications, setEmailNotifications] = useState(true)
   const [pushNotifications, setPushNotifications] = useState(false)
   const [weeklySummary, setWeeklySummary] = useState(true)
+
+  useEffect(() => {
+    let active = true
+
+    if (!session) {
+      setProfile(null)
+      setError(true)
+      setLoading(false)
+      return () => {
+        active = false
+      }
+    }
+
+    setLoading(true)
+    setError(false)
+    getProfileApi(session.token)
+      .then((data) => {
+        if (active) setProfile(data)
+      })
+      .catch((err) => {
+        console.error("Error cargando el perfil:", err)
+        if (active) setError(true)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [session, retryCount])
+
+  const fullName = profile?.name ?? ""
+  const initials = getInitials(fullName)
+  const unavailable = "No disponible"
+  const registeredAt = profile?.registeredAt
+    ? new Date(`${profile.registeredAt}T00:00:00`).toLocaleDateString("es-PE", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : unavailable
 
   return (
     <section className="space-y-6" aria-labelledby="profile-title">
@@ -68,30 +112,113 @@ export function ProfileView() {
         <p className="text-sm text-brand-muted">Administra tu información y preferencias de cuenta</p>
       </div>
 
-      <section className="rounded-xl border border-white/10 bg-brand-surface p-5">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <span className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-accent text-2xl font-bold text-brand-bg">
-              {initials}
-            </span>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-bold text-brand-text">{fullName}</h2>
-                <span className="inline-flex items-center rounded-full bg-brand-positive/15 px-2.5 py-1 text-xs font-semibold text-brand-positive">
-                  Titular de cuenta
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-brand-muted">{email}</p>
-              <p className="mt-1 text-xs text-brand-muted">Cliente desde 2024</p>
-            </div>
+      {loading ? (
+        <div className="space-y-6" role="status" aria-label="Cargando perfil">
+          <div className="h-32 animate-pulse rounded-xl border border-white/10 bg-brand-surface" />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="h-52 animate-pulse rounded-xl border border-white/10 bg-brand-surface" />
+            <div className="h-52 animate-pulse rounded-xl border border-white/10 bg-brand-surface" />
           </div>
-
-          <button type="button" className="btn-secondary inline-flex items-center gap-2 self-start sm:self-auto">
-            <User className="h-4 w-4" aria-hidden="true" />
-            Editar perfil
-          </button>
+          <span className="sr-only">Cargando datos del perfil…</span>
         </div>
-      </section>
+      ) : error ? (
+        <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
+          <p className="text-sm font-semibold text-brand-text">
+            {session ? "No pudimos cargar tus datos personales." : "Inicia sesión para consultar tu perfil."}
+          </p>
+          {session ? (
+            <>
+              <p className="mt-1 text-xs text-brand-muted">Revisa tu conexión e inténtalo nuevamente.</p>
+              <button
+                type="button"
+                onClick={() => setRetryCount((count) => count + 1)}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-brand-text transition-colors hover:bg-white/5"
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                Reintentar
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : profile ? (
+        <>
+          <section className="rounded-xl border border-white/10 bg-brand-surface p-5">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4">
+                <span className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-accent text-2xl font-bold text-brand-bg">
+                  {initials}
+                </span>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-bold text-brand-text">{profile.name || unavailable}</h2>
+                    <span className="inline-flex items-center rounded-full bg-brand-positive/15 px-2.5 py-1 text-xs font-semibold text-brand-positive">
+                      {profile.role === "admin" ? "Administrador" : "Cliente"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-brand-muted">{profile.email || unavailable}</p>
+                </div>
+              </div>
+
+              <button type="button" className="btn-secondary inline-flex items-center gap-2 self-start sm:self-auto">
+                <User className="h-4 w-4" aria-hidden="true" />
+                Editar perfil
+              </button>
+            </div>
+          </section>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <SectionCard title="Datos personales">
+              <dl className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs font-medium text-brand-muted">Nombre completo</dt>
+                  <dd className="mt-1 break-words text-sm font-medium text-brand-text">{profile.name || unavailable}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-brand-muted">DNI</dt>
+                  <dd className="mt-1 text-sm font-medium text-brand-text">{profile.dni || unavailable}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-brand-muted">Correo electrónico</dt>
+                  <dd className="mt-1 break-words text-sm font-medium text-brand-text">{profile.email || unavailable}</dd>
+                </div>
+                <div>
+                  <dt className="flex items-center gap-1 text-xs font-medium text-brand-muted">
+                    <Phone className="h-3.5 w-3.5" aria-hidden="true" />
+                    Teléfono
+                  </dt>
+                  <dd className="mt-1 text-sm font-medium text-brand-text">{profile.phone || unavailable}</dd>
+                </div>
+              </dl>
+            </SectionCard>
+
+            <SectionCard title="Información de cuenta">
+              <dl className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs font-medium text-brand-muted">Tipo de usuario</dt>
+                  <dd className="mt-1 text-sm font-medium text-brand-text">
+                    {profile.role === "admin" ? "Administrador" : "Cliente"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-brand-muted">Estado de la cuenta</dt>
+                  <dd className="mt-1 text-sm font-medium text-brand-text">
+                    {profile.status === "active" ? "Activa" : profile.status === "inactive" ? "Inactiva" : unavailable}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-brand-muted">Fecha de registro</dt>
+                  <dd className="mt-1 text-sm font-medium capitalize text-brand-text">{registeredAt}</dd>
+                </div>
+              </dl>
+            </SectionCard>
+          </div>
+        </>
+      ) : (
+        <div className="rounded-xl border border-dashed border-white/10 px-5 py-10 text-center">
+          <User className="mx-auto h-8 w-8 text-brand-muted" aria-hidden="true" />
+          <p className="mt-3 text-sm font-semibold text-brand-text">No hay datos de perfil disponibles</p>
+        </div>
+      )}
 
       <div className="space-y-6">
         <SectionCard title="Seguridad">

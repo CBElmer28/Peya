@@ -224,7 +224,18 @@ export async function logoutApi(token?: string) {
   })
 }
 
-export async function getProfileApi(token: string) {
+export type ProfileResponse = {
+  id: string
+  name: string
+  email: string
+  role: "client" | "admin"
+  dni?: string
+  phone?: string
+  status?: "active" | "inactive"
+  registeredAt?: string
+}
+
+export async function getProfileApi(token: string): Promise<ProfileResponse> {
   return fetchApi<{ id: string; name: string; email: string; role: string }>("/auth/profile", {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
