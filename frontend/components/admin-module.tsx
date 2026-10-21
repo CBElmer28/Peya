@@ -372,6 +372,7 @@ function ClientDialog({
             </div>
           </div>
         ) : (
+        <>
         <div className="mt-5 space-y-4">
           <label className="flex flex-col gap-1.5 text-sm text-brand-muted">
             Nombre completo
@@ -483,6 +484,7 @@ function ClientDialog({
             )}
           </button>
         </div>
+        </>
         )}
       </div>
     </div>

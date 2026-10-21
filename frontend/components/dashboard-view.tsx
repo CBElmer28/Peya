@@ -10,6 +10,7 @@ import { RecentMovements } from "@/components/recent-movements"
 import { NotificationsPanel } from "@/components/notifications-panel"
 import { ProfileView } from "@/components/profile-view"
 import { TransferFlow } from "@/components/transfer-flow"
+import { RechargeView } from "@/components/recharge-view"
 import { AdminModule } from "@/components/admin-module"
 import { useAuth } from "@/components/auth-provider"
 import { getNotificationsApi } from "@/lib/api-client"
@@ -75,6 +76,8 @@ export function DashboardView() {
             <ProfileView />
           ) : view === "transfers" ? (
             <TransferFlow />
+          ) : view === "recharge" ? (
+            <RechargeView />
           ) : view === "admin" ? (
             <AdminModule />
           ) : view === "notifications" ? (

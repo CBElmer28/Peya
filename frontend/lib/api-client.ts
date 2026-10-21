@@ -236,7 +236,7 @@ export type ProfileResponse = {
 }
 
 export async function getProfileApi(token: string): Promise<ProfileResponse> {
-  return fetchApi<{ id: string; name: string; email: string; role: string }>("/auth/profile", {
+  return fetchApi<ProfileResponse>("/auth/profile", {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
   })

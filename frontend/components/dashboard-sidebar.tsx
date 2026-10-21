@@ -1,6 +1,6 @@
 "use client"
 
-import { Home, CreditCard, List, ArrowLeftRight, Bell, User, ShieldCheck, Sparkles } from "lucide-react"
+import { Home, CreditCard, List, ArrowLeftRight, Bell, User, ShieldCheck, Sparkles, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type DashboardViewKey =
@@ -8,6 +8,7 @@ export type DashboardViewKey =
   | "cards"
   | "movements"
   | "transfers"
+  | "recharge"
   | "notifications"
   | "profile"
   | "admin"
@@ -17,6 +18,7 @@ const navItems: { key: DashboardViewKey; icon: typeof Home; label: string }[] = 
   { key: "cards", icon: CreditCard, label: "Cuentas" },
   { key: "movements", icon: List, label: "Movimientos" },
   { key: "transfers", icon: ArrowLeftRight, label: "Transferencias" },
+  { key: "recharge", icon: Wallet, label: "Recargas" },
   { key: "admin", icon: ShieldCheck, label: "Administración" },
   { key: "notifications", icon: Bell, label: "Notificaciones" },
   { key: "profile", icon: User, label: "Perfil" },
@@ -33,7 +35,7 @@ export function DashboardSidebar({
   onNavigate: (view: DashboardViewKey) => void
   unreadNotificationsCount: number
 }) {
-  const principalItems = navItems.filter((item) => ["home", "cards", "movements", "transfers"].includes(item.key))
+  const principalItems = navItems.filter((item) => ["home", "cards", "movements", "transfers", "recharge"].includes(item.key))
   const accountItems = navItems.filter((item) => ["admin", "notifications", "profile"].includes(item.key))
 
   return (
