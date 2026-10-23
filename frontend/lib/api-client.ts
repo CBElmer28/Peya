@@ -426,6 +426,18 @@ export async function updateClientApi(
   })
 }
 
+export async function updateClientStatusApi(
+  token: string,
+  clientId: string,
+  status: mockApi.ClientStatus,
+): Promise<mockApi.Client> {
+  return fetchApi<mockApi.Client>(`/users/${encodeURIComponent(clientId)}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ status }),
+  })
+}
+
 export async function deleteClientApi(token: string, clientId: string): Promise<{ success?: boolean; ok?: boolean }> {
   return fetchApi<{ success?: boolean; ok?: boolean }>(`/users/${encodeURIComponent(clientId)}`, {
     method: "DELETE",

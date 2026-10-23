@@ -16,6 +16,7 @@ import {
   User,
   X,
   UserPlus,
+  ShieldOff,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
@@ -24,6 +25,7 @@ import {
   getClientsApi,
   createClientApi,
   updateClientApi,
+  updateClientStatusApi,
   deleteClientApi,
   getAdminMetricsApi,
   getSupervisedAccountsApi,
@@ -587,6 +589,134 @@ function DeleteClientDialog({
   )
 }
 
+function ChangeClientStatusDialog({
+  client,
+  loading,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  client: Client | null
+  loading: boolean
+  error: string | null
+  onClose: () => void
+  onConfirm: () => Promise<void>
+}) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null)
+  const nextStatus = client?.status === "active" ? "inactive" : "active"
+  const isBlocking = nextStatus === "inactive"
+
+  useEffect(() => {
+    if (!client) return
+    queueMicrotask(() => cancelButtonRef.current?.focus())
+  }, [client])
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!client) return
+      if (event.key === "Escape" && !loading) {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== "Tab") return
+
+      const focusable = getFocusableElements(dialogRef.current)
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [client, loading, onClose])
+
+  if (!client) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <button
+        type="button"
+        aria-label="Cerrar confirmación"
+        disabled={loading}
+        className="absolute inset-0 bg-black/70 disabled:cursor-wait"
+        onClick={onClose}
+      />
+      <div
+        ref={dialogRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="client-status-title"
+        aria-describedby="client-status-description"
+        className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-brand-surface2 p-5 shadow-2xl"
+      >
+        <div className="flex items-start gap-3">
+          <span
+            className={cn(
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+              isBlocking ? "bg-brand-negative/15 text-brand-negative" : "bg-brand-positive/15 text-brand-positive",
+            )}
+          >
+            {isBlocking ? <ShieldOff className="h-5 w-5" aria-hidden="true" /> : <ShieldCheck className="h-5 w-5" aria-hidden="true" />}
+          </span>
+          <div>
+            <h3 id="client-status-title" className="text-lg font-bold text-brand-text">
+              {isBlocking ? "¿Bloquear usuario?" : "¿Desbloquear usuario?"}
+            </h3>
+            <p id="client-status-description" className="mt-2 text-sm text-brand-muted">
+              {client.name} está actualmente{" "}
+              <span className="font-semibold text-brand-text">
+                {client.status === "active" ? "activo" : "inactivo"}
+              </span>
+              . {isBlocking
+                ? "Al bloquearlo, su acceso al sistema quedará desactivado."
+                : "Al desbloquearlo, podrá volver a acceder al sistema."}
+            </p>
+          </div>
+        </div>
+
+        {error ? (
+          <p role="alert" className="mt-4 rounded-xl bg-brand-negative/15 px-4 py-3 text-sm font-medium text-brand-negative">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-6 flex items-center justify-end gap-3">
+          <button
+            ref={cancelButtonRef}
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="btn-secondary disabled:opacity-60"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => void onConfirm()}
+            disabled={loading}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+              isBlocking ? "bg-brand-negative hover:opacity-90" : "bg-brand-positive hover:opacity-90",
+            )}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+            {loading ? "Actualizando…" : isBlocking ? "Confirmar bloqueo" : "Confirmar desbloqueo"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ClientDetailsDialog({
   client,
   onClose,
@@ -870,6 +1000,8 @@ function ClientManagement() {
   const { session } = useAuth()
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
+  const [clientsLoadError, setClientsLoadError] = useState("")
+  const [clientsReloadCount, setClientsReloadCount] = useState(0)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all")
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all")
@@ -882,6 +1014,9 @@ function ClientManagement() {
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [statusTarget, setStatusTarget] = useState<Client | null>(null)
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [statusError, setStatusError] = useState<string | null>(null)
   const [operationResult, setOperationResult] = useState<{ tone: "success" | "error"; message: string } | null>(null)
   const [focusReturnTarget, setFocusReturnTarget] = useState<HTMLElement | null>(null)
 
@@ -889,6 +1024,7 @@ function ClientManagement() {
     if (!session) return
     let active = true
     setLoading(true)
+    setClientsLoadError("")
     getClientsApi(session.token)
       .then((c) => {
         if (!active) return
@@ -898,12 +1034,15 @@ function ClientManagement() {
       .catch((err) => {
         console.error("Error cargando clientes:", err)
         if (!active) return
+        setClientsLoadError(
+          err instanceof Error ? err.message : "No se pudo cargar la lista de usuarios. Intenta nuevamente.",
+        )
         setLoading(false)
       })
     return () => {
       active = false
     }
-  }, [session])
+  }, [session, clientsReloadCount])
 
   const filtered = useMemo(() => {
     const result = clients.filter((c) => {
@@ -1038,6 +1177,45 @@ function ClientManagement() {
     }
   }
 
+  function openStatusDialog(client: Client) {
+    setStatusTarget(client)
+    setStatusError(null)
+    setOperationResult(null)
+  }
+
+  function closeStatusDialog() {
+    if (statusLoading) return
+    setStatusTarget(null)
+    setStatusError(null)
+  }
+
+  async function handleConfirmStatusChange() {
+    if (!session || !statusTarget || statusLoading) return
+    const target = statusTarget
+    const nextStatus: ClientStatus = target.status === "active" ? "inactive" : "active"
+    setStatusLoading(true)
+    setStatusError(null)
+    try {
+      const updated = await updateClientStatusApi(session.token, target.id, nextStatus)
+      setClients((current) => current.map((client) => (client.id === target.id ? updated : client)))
+      setDetailsClient((current) => current?.id === target.id ? updated : current)
+      setOperationResult({
+        tone: "success",
+        message: `Se ${nextStatus === "inactive" ? "bloqueó" : "desbloqueó"} correctamente el usuario ${updated.name}.`,
+      })
+      setStatusTarget(null)
+    } catch (err) {
+      console.error("Error cambiando estado del usuario:", err)
+      const message = err instanceof Error
+        ? `No se pudo ${nextStatus === "inactive" ? "bloquear" : "desbloquear"} al usuario: ${err.message}`
+        : `No se pudo ${nextStatus === "inactive" ? "bloquear" : "desbloquear"} al usuario. Intenta nuevamente.`
+      setStatusError(message)
+      setOperationResult({ tone: "error", message })
+    } finally {
+      setStatusLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1062,6 +1240,19 @@ function ClientManagement() {
           )}
         >
           {operationResult.message}
+        </div>
+      ) : null}
+
+      {clientsLoadError ? (
+        <div role="alert" className="flex flex-col justify-between gap-3 rounded-xl border border-brand-negative/30 bg-brand-negative/10 px-4 py-3 text-sm text-brand-negative sm:flex-row sm:items-center">
+          <p>{clientsLoadError}</p>
+          <button
+            type="button"
+            onClick={() => setClientsReloadCount((count) => count + 1)}
+            className="self-start rounded-lg border border-brand-negative/30 px-3 py-1.5 text-xs font-semibold hover:bg-brand-negative/10 sm:self-auto"
+          >
+            Reintentar
+          </button>
         </div>
       ) : null}
 
@@ -1184,6 +1375,29 @@ function ClientManagement() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => openStatusDialog(c)}
+                          aria-label={`${c.status === "active" ? "Bloquear" : "Desbloquear"} a ${c.name}`}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                            c.status === "active"
+                              ? "text-brand-negative hover:bg-brand-negative/10"
+                              : "text-brand-positive hover:bg-brand-positive/10",
+                          )}
+                        >
+                          {c.status === "active" ? (
+                            <>
+                              <ShieldOff className="h-4 w-4" aria-hidden="true" />
+                              Bloquear
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                              Desbloquear
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
                           onClick={(event) => openDeleteModal(c, event.currentTarget)}
                           className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-negative transition-colors hover:bg-brand-negative/10"
                         >
@@ -1226,6 +1440,13 @@ function ClientManagement() {
         error={deleteError}
         onClose={closeDeleteModal}
         onConfirm={handleConfirmDelete}
+      />
+      <ChangeClientStatusDialog
+        client={statusTarget}
+        loading={statusLoading}
+        error={statusError}
+        onClose={closeStatusDialog}
+        onConfirm={handleConfirmStatusChange}
       />
       <ClientDetailsDialog
         client={detailsClient}
