@@ -195,10 +195,10 @@ export async function getAccountDetailApi(
 export async function searchMovementsApi(
   token: string,
   params: mockApi.MovementsQueryParams,
-): Promise<mockApi.MovementsPageResponse> {
+): Promise<MovementsSearchPage> {
   const queryParts: string[] = []
   if (params.page) queryParts.push(`page=${params.page}`)
-  if (params.limit) queryParts.push(`limit=${params.limit}`)
+  if (params.limit) queryParts.push(`pageSize=${params.limit}`)
   if (params.from) queryParts.push(`from=${encodeURIComponent(params.from)}`)
   if (params.to) queryParts.push(`to=${encodeURIComponent(params.to)}`)
   if (params.type && params.type !== "all") queryParts.push(`type=${params.type}`)
@@ -207,10 +207,29 @@ export async function searchMovementsApi(
 
   const qs = queryParts.length ? `?${queryParts.join("&")}` : ""
 
-  return fetchApi<mockApi.MovementsPageResponse>(`/movements${qs}`, {
+  return fetchApi<MovementsSearchPage>(`/movements${qs}`, {
     method: "GET",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
+}
+
+export type MovementsSearchPage = {
+  items: {
+    id: string
+    accountId: string
+    accountMasked: string
+    type: "CREDITO" | "DEBITO"
+    category: string
+    description: string
+    amount: string
+    currency: string
+    balanceAfter: string
+    date: string
+  }[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
 }
 
 // ==========================================
