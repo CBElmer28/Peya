@@ -189,11 +189,14 @@ function ClientDialog({
   mode,
   initialClient,
   existingClients,
+  canAssignRoles,
   onClose,
   onSubmit,
 }: {
   open: boolean
   mode: ClientModalMode
+  /** Cambiar el rol de una cuenta exige gestionar administradores; sin el permiso el selector queda bloqueado. */
+  canAssignRoles: boolean
   initialClient: Client | null
   existingClients: Client[]
   onClose: () => void
@@ -414,8 +417,10 @@ function ClientDialog({
                     key={role}
                     type="button"
                     onClick={() => updateField("role", role)}
+                    disabled={!canAssignRoles}
+                    aria-pressed={selected}
                     className={cn(
-                      "rounded-2xl border p-4 text-left transition-colors duration-150",
+                      "rounded-2xl border p-4 text-left transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60",
                       selected ? "border-brand-accent bg-brand-accent/10" : "border-white/10 bg-brand-surface hover:bg-white/5",
                     )}
                   >
@@ -437,6 +442,11 @@ function ClientDialog({
                 )
               })}
             </div>
+            {!canAssignRoles ? (
+              <p className="mt-2 text-xs text-brand-muted">
+                Asignar o cambiar roles requiere el permiso para gestionar administradores.
+              </p>
+            ) : null}
           </div>
 
           {mode === "edit" ? (
@@ -712,10 +722,12 @@ function ClientDetailsDialog({
   client,
   onClose,
   onEdit,
+  canEdit,
 }: {
   client: Client | null
   onClose: () => void
   onEdit: (client: Client) => void
+  canEdit: boolean
 }) {
   useEffect(() => {
     if (!client) return
@@ -784,14 +796,16 @@ function ClientDetailsDialog({
         </dl>
         <div className="mt-6 flex justify-end gap-3">
           <button type="button" onClick={onClose} className="btn-secondary">Cerrar</button>
-          <button
-            type="button"
-            onClick={() => onEdit(client)}
-            className="btn-primary inline-flex items-center gap-2"
-          >
-            <Pencil className="h-4 w-4" aria-hidden="true" />
-            Editar cliente
-          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => onEdit(client)}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+              Editar cliente
+            </button>
+          ) : null}
         </div>
       </section>
     </div>
@@ -987,7 +1001,7 @@ function AdminDashboard() {
   )
 }
 
-function ClientManagement() {
+function ClientManagement({ canManage, canAssignRoles }: { canManage: boolean; canAssignRoles: boolean }) {
   const { session } = useAuth()
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
@@ -1214,10 +1228,12 @@ function ClientManagement() {
           <h1 className="text-2xl font-bold text-brand-text">Gestión de usuarios</h1>
           <p className="text-sm text-brand-muted">Administra cuentas de clientes y administradores del sistema.</p>
         </div>
-        <button type="button" onClick={(event) => openCreateModal(event.currentTarget)} className="btn-primary inline-flex items-center gap-2 self-start sm:self-auto">
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          + Nuevo usuario
-        </button>
+        {canManage ? (
+          <button type="button" onClick={(event) => openCreateModal(event.currentTarget)} className="btn-primary inline-flex items-center gap-2 self-start sm:self-auto">
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            + Nuevo usuario
+          </button>
+        ) : null}
       </div>
 
       {operationResult ? (
@@ -1356,45 +1372,49 @@ function ClientManagement() {
                           <Eye className="h-4 w-4" aria-hidden="true" />
                           Ver
                         </button>
-                        <button
-                          type="button"
-                          onClick={(event) => openEditModal(c, event.currentTarget)}
-                          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-light transition-colors hover:bg-white/10"
-                        >
-                          <Pencil className="h-4 w-4" aria-hidden="true" />
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openStatusDialog(c)}
-                          aria-label={`${c.status === "active" ? "Bloquear" : "Desbloquear"} a ${c.name}`}
-                          className={cn(
-                            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                            c.status === "active"
-                              ? "text-brand-negative hover:bg-brand-negative/10"
-                              : "text-brand-positive hover:bg-brand-positive/10",
-                          )}
-                        >
-                          {c.status === "active" ? (
-                            <>
-                              <ShieldOff className="h-4 w-4" aria-hidden="true" />
-                              Bloquear
-                            </>
-                          ) : (
-                            <>
-                              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                              Desbloquear
-                            </>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => openDeleteModal(c, event.currentTarget)}
-                          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-negative transition-colors hover:bg-brand-negative/10"
-                        >
-                          <Trash2 className="h-4 w-4" aria-hidden="true" />
-                          Eliminar
-                        </button>
+                        {canManage ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(event) => openEditModal(c, event.currentTarget)}
+                              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-light transition-colors hover:bg-white/10"
+                            >
+                              <Pencil className="h-4 w-4" aria-hidden="true" />
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openStatusDialog(c)}
+                              aria-label={`${c.status === "active" ? "Bloquear" : "Desbloquear"} a ${c.name}`}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                                c.status === "active"
+                                  ? "text-brand-negative hover:bg-brand-negative/10"
+                                  : "text-brand-positive hover:bg-brand-positive/10",
+                              )}
+                            >
+                              {c.status === "active" ? (
+                                <>
+                                  <ShieldOff className="h-4 w-4" aria-hidden="true" />
+                                  Bloquear
+                              </>
+                            ) : (
+                              <>
+                                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                                Desbloquear
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => openDeleteModal(c, event.currentTarget)}
+                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-negative transition-colors hover:bg-brand-negative/10"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            Eliminar
+                          </button>
+                          </>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -1414,6 +1434,7 @@ function ClientManagement() {
         mode={modalMode}
         initialClient={selectedClient}
         existingClients={clients}
+        canAssignRoles={canAssignRoles}
         onClose={closeModal}
         onSubmit={async (payload) => {
           if (modalMode === "create") {
@@ -1441,6 +1462,7 @@ function ClientManagement() {
       />
       <ClientDetailsDialog
         client={detailsClient}
+        canEdit={canManage}
         onClose={() => setDetailsClient(null)}
         onEdit={(client) => {
           setDetailsClient(null)
@@ -1828,79 +1850,112 @@ function SubadminManagement({ access }: { access: AdminAccess }) {
 
 export function AdminModule() {
   const { session } = useAuth()
-  const [tab, setTab] = useState<AdminTab>("dashboard")
+  const [tab, setTab] = useState<AdminTab | null>(null)
   const [access, setAccess] = useState<AdminAccess | null>(null)
+  const [accessLoading, setAccessLoading] = useState(true)
+  const [accessError, setAccessError] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
 
-  // Los permisos vienen del servidor; si no se pueden leer, la pestaña restringida simplemente no se ofrece.
+  // Los permisos vienen del servidor (fuente de verdad); la interfaz solo ofrece lo que el servidor aceptaria.
   useEffect(() => {
     let active = true
     if (!session) {
       setAccess(null)
+      setAccessError(true)
+      setAccessLoading(false)
       return () => {
         active = false
       }
     }
+    setAccessLoading(true)
+    setAccessError(false)
     getAdminAccessApi(session.token)
       .then((data) => {
         if (active) setAccess(data)
       })
       .catch((error) => {
         console.error("Error verificando permisos administrativos:", error instanceof Error ? error.name : "error")
-        if (active) setAccess(null)
+        if (active) setAccessError(true)
+      })
+      .finally(() => {
+        if (active) setAccessLoading(false)
       })
     return () => {
       active = false
     }
-  }, [session])
+  }, [session, retryCount])
 
-  const canManageAdmins = access?.permissions.includes("ADMINS_GESTIONAR") ?? false
-  const activeTab: AdminTab = tab === "subadmins" && !canManageAdmins ? "dashboard" : tab
+  if (accessLoading) {
+    return (
+      <div className="rounded-xl border border-white/10 bg-brand-surface p-6" role="status">
+        <div className="h-24 animate-pulse rounded-lg bg-brand-surface-2" />
+        <span className="sr-only">Verificando permisos de administrador…</span>
+      </div>
+    )
+  }
+
+  if (accessError || !access) {
+    return (
+      <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
+        <p className="text-sm font-semibold text-brand-text">No pudimos verificar tus permisos.</p>
+        {session ? (
+          <button
+            type="button"
+            onClick={() => setRetryCount((count) => count + 1)}
+            className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-brand-text hover:bg-white/5"
+          >
+            Reintentar
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+
+  const has = (permission: string) => access.permissions.includes(permission)
+  const tabs: { key: AdminTab; label: string }[] = [
+    // El panel consulta metricas y cuentas supervisadas: necesita ambos permisos.
+    ...(has("METRICAS_VER") && has("CUENTAS_SUPERVISAR") ? [{ key: "dashboard" as const, label: "Panel administrativo" }] : []),
+    ...(has("CLIENTES_VER") ? [{ key: "clients" as const, label: "Gestión de usuarios" }] : []),
+    ...(has("ADMINS_GESTIONAR") ? [{ key: "subadmins" as const, label: "Subadministradores" }] : []),
+  ]
+
+  if (tabs.length === 0) {
+    return (
+      <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5" role="alert">
+        <h2 className="font-semibold text-brand-text">Acceso restringido</h2>
+        <p className="mt-1 text-sm text-brand-muted">Tu cuenta no tiene permisos para ninguna sección de administración.</p>
+      </div>
+    )
+  }
+
+  const activeTab = tab && tabs.some((item) => item.key === tab) ? tab : tabs[0].key
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1.5 rounded-xl bg-brand-surface p-1.5 sm:flex-row">
-        <button
-          type="button"
-          onClick={() => setTab("dashboard")}
-          className={cn(
-            "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-            activeTab === "dashboard" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
-          )}
-        >
-          Panel administrativo
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("clients")}
-          className={cn(
-            "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-            activeTab === "clients" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
-          )}
-        >
-          Gestión de usuarios
-        </button>
-        {canManageAdmins ? (
+        {tabs.map((item) => (
           <button
+            key={item.key}
             type="button"
-            onClick={() => setTab("subadmins")}
-            aria-current={activeTab === "subadmins" ? "page" : undefined}
+            onClick={() => setTab(item.key)}
+            aria-current={activeTab === item.key ? "page" : undefined}
             className={cn(
               "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-              activeTab === "subadmins" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
+              activeTab === item.key ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
             )}
           >
-            Subadministradores
+            {item.label}
           </button>
-        ) : null}
+        ))}
       </div>
 
       {activeTab === "dashboard" ? (
         <AdminDashboard />
       ) : activeTab === "clients" ? (
-        <ClientManagement />
-      ) : access ? (
+        <ClientManagement canManage={has("CLIENTES_GESTIONAR")} canAssignRoles={has("ADMINS_GESTIONAR")} />
+      ) : (
         <SubadminManagement access={access} />
-      ) : null}
+      )}
     </div>
   )
 }
