@@ -29,14 +29,18 @@ export function DashboardSidebar({
   activeView,
   onNavigate,
   unreadNotificationsCount,
+  isAdmin = false,
 }: {
   open: boolean
   activeView: DashboardViewKey
   onNavigate: (view: DashboardViewKey) => void
   unreadNotificationsCount: number
+  isAdmin?: boolean
 }) {
   const principalItems = navItems.filter((item) => ["home", "cards", "movements", "transfers", "recharge"].includes(item.key))
-  const accountItems = navItems.filter((item) => ["admin", "notifications", "profile"].includes(item.key))
+  const accountItems = navItems.filter(
+    (item) => ["admin", "notifications", "profile"].includes(item.key) && (item.key !== "admin" || isAdmin),
+  )
 
   return (
     <aside

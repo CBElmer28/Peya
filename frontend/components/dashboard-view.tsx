@@ -20,6 +20,7 @@ export function DashboardView() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [view, setView] = useState<DashboardViewKey>("home")
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0)
+  const isAdmin = session?.user.role === "admin"
 
   useEffect(() => {
     if (!session) {
@@ -55,6 +56,7 @@ export function DashboardView() {
         activeView={view}
         onNavigate={handleNavigate}
         unreadNotificationsCount={unreadNotificationsCount}
+        isAdmin={isAdmin}
       />
 
       {sidebarOpen && (
@@ -78,7 +80,7 @@ export function DashboardView() {
             <TransferFlow />
           ) : view === "recharge" ? (
             <RechargeView />
-          ) : view === "admin" ? (
+          ) : view === "admin" && isAdmin ? (
             <AdminModule />
           ) : view === "notifications" ? (
             <NotificationsPanel

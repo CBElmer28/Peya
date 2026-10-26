@@ -139,7 +139,7 @@ function generateCci(): string {
 
 export type Session = {
   token: string
-  user: { name: string; email: string }
+  user: { name: string; email: string; role?: "client" | "admin" }
 }
 
 const NETWORK_DELAY = 700
