@@ -151,7 +151,7 @@ export function NotificationsPanel({
                 <p className={cn("text-sm leading-relaxed", n.unread ? "font-semibold text-brand-text" : "text-brand-light/80")}>
                   {n.title}
                 </p>
-                {n.type === "transfer" && (n.transferOrigin || n.amount || n.date) ? (
+                {n.type === "transfer" && (n.transferOrigin || n.amount || n.date || n.receivingAccount) ? (
                   <dl className="mt-2 grid gap-x-5 gap-y-2 text-xs sm:grid-cols-2">
                     {n.transferOrigin ? (
                       <div>
@@ -168,6 +168,12 @@ export function NotificationsPanel({
                             currency: n.currency,
                           }).format(Number(n.amount))}
                         </dd>
+                      </div>
+                    ) : null}
+                    {n.receivingAccount ? (
+                      <div>
+                        <dt className="text-brand-muted">Cuenta receptora</dt>
+                        <dd className="mt-0.5 break-words font-medium text-brand-light">{n.receivingAccount}</dd>
                       </div>
                     ) : null}
                     {n.date ? (

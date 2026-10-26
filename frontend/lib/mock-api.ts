@@ -41,6 +41,7 @@ export type AppNotification = {
   amount?: string
   currency?: "PEN" | "USD"
   date?: string
+  receivingAccount?: string
 }
 
 export type DniData = {
