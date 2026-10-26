@@ -21,7 +21,6 @@ import {
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
 import {
-  getProfileApi,
   getClientsApi,
   createClientApi,
   updateClientApi,
@@ -29,6 +28,11 @@ import {
   deleteClientApi,
   getAdminMetricsApi,
   getSupervisedAccountsApi,
+  getAdminAccessApi,
+  getAssignableRolesApi,
+  getSubadminsApi,
+  createSubadminApi,
+  changeSubadminRolesApi,
 } from "@/lib/api-client"
 import type {
   AdminMetric,
@@ -37,22 +41,9 @@ import type {
   ClientRole,
   ClientStatus,
 } from "@/lib/mock-api"
-import type { ProfileResponse } from "@/lib/api-client"
+import type { AdminAccess, AssignableRole, SubadminView } from "@/lib/api-client"
 
 type AdminTab = "dashboard" | "clients" | "subadmins"
-
-type SubadminRole = "SOPORTE"
-
-type SubadminDraft = {
-  id: number
-  name: string
-  email: string
-  role: SubadminRole
-}
-
-const PERMITTED_SUBADMIN_ROLES: { value: SubadminRole; label: string; description: string }[] = [
-  { value: "SOPORTE", label: "Soporte", description: "Consulta de clientes y cuentas supervisadas" },
-]
 
 const PAGE_SIZE = 5
 
@@ -1460,42 +1451,78 @@ function ClientManagement() {
   )
 }
 
-function SubadminManagement() {
+const ROLE_LABELS: Record<string, string> = { ADMIN: "Administrador", SOPORTE: "Soporte" }
+const PERMISSION_LABELS: Record<string, string> = {
+  METRICAS_VER: "Ver métricas",
+  CUENTAS_SUPERVISAR: "Supervisar cuentas",
+  CLIENTES_VER: "Ver clientes",
+  CLIENTES_GESTIONAR: "Gestionar clientes",
+  ADMINS_GESTIONAR: "Gestionar administradores",
+}
+const roleLabel = (name: string) => ROLE_LABELS[name] ?? name
+
+/** Traduce los codigos de error del backend; los mensajes del servidor nunca incluyen los datos enviados. */
+function describeSubadminError(err: unknown, action: string): string {
+  const body = typeof err === "object" && err !== null && "body" in err ? (err as { body?: { error?: string } }).body : undefined
+  switch (body?.error) {
+    case "EMAIL_IN_USE":
+      return "Ese correo electrónico ya está registrado."
+    case "PRIVILEGE_ESCALATION":
+      return "No puedes asignar ni modificar privilegios que tu cuenta no posee."
+    case "SELF_PRIVILEGE_CHANGE":
+      return "No puedes modificar tus propios privilegios."
+    case "ROLE_NOT_FOUND":
+      return "El rol seleccionado ya no está disponible."
+    case "UNKNOWN_FIELDS":
+      return "La solicitud incluye campos no permitidos."
+  }
+  const statusCode = typeof err === "object" && err !== null && "statusCode" in err ? (err as { statusCode?: number }).statusCode : undefined
+  if (statusCode === 403) return "No tienes permisos para realizar esta acción."
+  return err instanceof Error ? `No se pudo ${action}: ${err.message}` : `No se pudo ${action}. Inténtalo nuevamente.`
+}
+
+function SubadminManagement({ access }: { access: AdminAccess }) {
   const { session } = useAuth()
-  const [profile, setProfile] = useState<ProfileResponse | null>(null)
-  const [loadingProfile, setLoadingProfile] = useState(true)
-  const [profileError, setProfileError] = useState(false)
+  const [roles, setRoles] = useState<AssignableRole[]>([])
+  const [subadmins, setSubadmins] = useState<SubadminView[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
-  const [role, setRole] = useState<SubadminRole | "">("")
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string; role?: string }>({})
-  const [drafts, setDrafts] = useState<SubadminDraft[]>([])
+  const [password, setPassword] = useState("")
+  const [role, setRole] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string; password?: string; role?: string }>({})
+  const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [changingId, setChangingId] = useState<string | null>(null)
+  const [rowError, setRowError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
     if (!session) {
-      setProfile(null)
-      setProfileError(true)
-      setLoadingProfile(false)
+      setLoadError(true)
+      setLoading(false)
       return () => {
         active = false
       }
     }
 
-    setLoadingProfile(true)
-    setProfileError(false)
-    getProfileApi(session.token)
-      .then((data) => {
-        if (active) setProfile(data)
+    setLoading(true)
+    setLoadError(false)
+    Promise.all([getAssignableRolesApi(session.token), getSubadminsApi(session.token)])
+      .then(([assignable, list]) => {
+        if (!active) return
+        setRoles(assignable)
+        setSubadmins(list)
       })
       .catch((error) => {
-        console.error("Error verificando permisos de subadministradores:", error)
-        if (active) setProfileError(true)
+        console.error("Error cargando subadministradores:", error instanceof Error ? error.name : "error")
+        if (active) setLoadError(true)
       })
       .finally(() => {
-        if (active) setLoadingProfile(false)
+        if (active) setLoading(false)
       })
 
     return () => {
@@ -1503,8 +1530,9 @@ function SubadminManagement() {
     }
   }, [session, retryCount])
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!session) return
     const errors: typeof fieldErrors = {}
     const cleanName = name.trim()
     const cleanEmail = email.trim()
@@ -1514,41 +1542,69 @@ function SubadminManagement() {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       errors.email = "Escribe un correo válido, por ejemplo nombre@dominio.com."
     }
-    if (!role || !PERMITTED_SUBADMIN_ROLES.some((option) => option.value === role)) {
-      errors.role = "Selecciona uno de los roles habilitados."
+    if (!password) errors.password = "Define una contraseña inicial."
+    else if (password.length < 8 || password.length > 64 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      errors.password = "Debe tener entre 8 y 64 caracteres, con letras y números."
     }
-    if (drafts.some((draft) => draft.email.toLowerCase() === cleanEmail.toLowerCase())) {
-      errors.email = "Ya existe un borrador con este correo."
-    }
+    if (!role || !roles.some((option) => option.name === role)) errors.role = "Selecciona uno de los roles habilitados."
+
     setFieldErrors(errors)
     setNotice(null)
-    if (Object.keys(errors).length > 0 || !role) return
+    setFormError(null)
+    if (Object.keys(errors).length > 0) return
 
-    setDrafts((current) => [
-      ...current,
-      { id: Date.now(), name: cleanName, email: cleanEmail, role },
-    ])
-    setName("")
-    setEmail("")
-    setRole("")
-    setFieldErrors({})
-    setNotice("Borrador agregado. Aún no se creó una cuenta ni se guardaron los cambios en el servidor.")
+    setSaving(true)
+    try {
+      const created = await createSubadminApi(session.token, {
+        name: cleanName,
+        email: cleanEmail,
+        password,
+        roles: [role],
+      })
+      setSubadmins((current) => [...current, created])
+      setName("")
+      setEmail("")
+      setPassword("")
+      setRole("")
+      setFieldErrors({})
+      setNotice("Subadministrador creado. Comparte la contraseña inicial por un canal seguro.")
+    } catch (err) {
+      console.error("Error creando subadministrador:", err instanceof Error ? err.name : "error")
+      setFormError(describeSubadminError(err, "crear el subadministrador"))
+    } finally {
+      setSaving(false)
+    }
   }
 
-  if (loadingProfile) {
+  async function handleRoleChange(target: SubadminView, nextRole: string) {
+    if (!session || target.roles.length === 1 && target.roles[0] === nextRole) return
+    setChangingId(target.id)
+    setRowError(null)
+    try {
+      const updated = await changeSubadminRolesApi(session.token, target.id, [nextRole])
+      setSubadmins((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+    } catch (err) {
+      console.error("Error cambiando roles:", err instanceof Error ? err.name : "error")
+      setRowError(describeSubadminError(err, "cambiar el rol"))
+    } finally {
+      setChangingId(null)
+    }
+  }
+
+  if (loading) {
     return (
       <div className="rounded-xl border border-white/10 bg-brand-surface p-6" role="status">
         <div className="h-24 animate-pulse rounded-lg bg-brand-surface-2" />
-        <span className="sr-only">Verificando permisos de administrador…</span>
+        <span className="sr-only">Cargando subadministradores…</span>
       </div>
     )
   }
 
-  if (profileError) {
+  if (loadError) {
     return (
       <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
         <p className="text-sm font-semibold text-brand-text">
-          {session ? "No pudimos verificar tus permisos." : "Inicia sesión para gestionar subadministradores."}
+          {session ? "No pudimos cargar los subadministradores." : "Inicia sesión para gestionar subadministradores."}
         </p>
         {session ? (
           <button
@@ -1563,16 +1619,7 @@ function SubadminManagement() {
     )
   }
 
-  if (profile?.role !== "admin") {
-    return (
-      <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5" role="alert">
-        <h2 className="font-semibold text-brand-text">Acceso restringido</h2>
-        <p className="mt-1 text-sm text-brand-muted">
-          Solo un administrador autenticado puede registrar subadministradores y asignar roles.
-        </p>
-      </div>
-    )
-  }
+  const ownPermissions = new Set(access.permissions)
 
   return (
     <section className="space-y-6" aria-labelledby="subadmins-title">
@@ -1581,13 +1628,8 @@ function SubadminManagement() {
           Gestión de subadministradores
         </h2>
         <p className="mt-1 text-sm text-brand-muted">
-          Prepara el registro y asigna únicamente roles disponibles para tu cuenta.
+          Registra subadministradores y asigna únicamente roles que no superen los permisos de tu cuenta.
         </p>
-      </div>
-
-      <div className="rounded-xl border border-brand-accent/20 bg-brand-accent/10 p-4 text-sm text-brand-light">
-        El servicio actual no ofrece un endpoint para registrar subadministradores ni asignarles roles. Los registros de
-        esta pantalla son borradores locales y no se guardan en el servidor.
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="rounded-xl border border-white/10 bg-brand-surface p-5">
@@ -1608,7 +1650,7 @@ function SubadminManagement() {
             </label>
             <input
               id="subadmin-name"
-              autoComplete="name"
+              autoComplete="off"
               maxLength={100}
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -1627,7 +1669,7 @@ function SubadminManagement() {
             <input
               id="subadmin-email"
               type="email"
-              autoComplete="email"
+              autoComplete="off"
               maxLength={255}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -1638,75 +1680,145 @@ function SubadminManagement() {
             />
             {fieldErrors.email ? <p id="subadmin-email-error" className="mt-1 text-xs text-brand-negative">{fieldErrors.email}</p> : null}
           </div>
+
+          <div>
+            <label htmlFor="subadmin-password" className="block text-sm font-medium text-brand-text">
+              Contraseña inicial
+            </label>
+            <input
+              id="subadmin-password"
+              type="password"
+              autoComplete="new-password"
+              maxLength={64}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              aria-invalid={Boolean(fieldErrors.password)}
+              aria-describedby="subadmin-password-help"
+              className="input-base mt-1"
+            />
+            <p
+              id="subadmin-password-help"
+              className={fieldErrors.password ? "mt-1 text-xs text-brand-negative" : "mt-1 text-xs text-brand-muted"}
+            >
+              {fieldErrors.password ?? "Entre 8 y 64 caracteres, con letras y números."}
+            </p>
+          </div>
         </div>
 
         <fieldset className="mt-5">
           <legend className="text-sm font-medium text-brand-text">Rol asignado</legend>
           {fieldErrors.role ? <p className="mt-1 text-xs text-brand-negative">{fieldErrors.role}</p> : null}
-          <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            {PERMITTED_SUBADMIN_ROLES.map((option) => {
-              const selected = role === option.value
-              return (
-                <label
-                  key={option.value}
-                  className={cn(
-                    "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors",
-                    selected ? "border-brand-accent bg-brand-accent/10" : "border-white/10 bg-brand-bg hover:bg-white/5",
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="subadmin-role"
-                    value={option.value}
-                    checked={selected}
-                    onChange={() => {
-                      setRole(option.value)
-                      setFieldErrors((current) => ({ ...current, role: undefined }))
-                    }}
-                    className="mt-1 accent-brand-accent"
-                  />
-                  <span>
-                    <span className="block text-sm font-semibold text-brand-text">{option.label}</span>
-                    <span className="mt-1 block text-xs text-brand-muted">{option.description}</span>
-                  </span>
-                </label>
-              )
-            })}
-          </div>
+          {roles.length === 0 ? (
+            <p className="mt-2 text-sm text-brand-muted">No hay roles disponibles para tu cuenta.</p>
+          ) : (
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              {roles.map((option) => {
+                const selected = role === option.name
+                return (
+                  <label
+                    key={option.name}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors",
+                      selected ? "border-brand-accent bg-brand-accent/10" : "border-white/10 bg-brand-bg hover:bg-white/5",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="subadmin-role"
+                      value={option.name}
+                      checked={selected}
+                      onChange={() => {
+                        setRole(option.name)
+                        setFieldErrors((current) => ({ ...current, role: undefined }))
+                      }}
+                      className="mt-1 accent-brand-accent"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-brand-text">{roleLabel(option.name)}</span>
+                      <span className="mt-1 block text-xs text-brand-muted">
+                        {option.permissions.map((p) => PERMISSION_LABELS[p] ?? p).join(" · ") || "Sin permisos"}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
         </fieldset>
 
+        {formError ? (
+          <p role="alert" className="mt-4 rounded-lg border border-brand-negative/30 bg-brand-negative/10 px-3 py-2 text-sm text-brand-negative">
+            {formError}
+          </p>
+        ) : null}
         {notice ? (
-          <p role="status" className="mt-4 rounded-lg border border-brand-accent/20 bg-brand-accent/10 px-3 py-2 text-sm text-brand-light">
+          <p role="status" className="mt-4 rounded-lg border border-brand-positive/30 bg-brand-positive/10 px-3 py-2 text-sm text-brand-positive">
             {notice}
           </p>
         ) : null}
 
         <div className="mt-5 flex justify-end">
-          <button type="submit" className="btn-primary inline-flex items-center gap-2">
-            <UserPlus className="h-4 w-4" aria-hidden="true" />
-            Agregar borrador
+          <button type="submit" disabled={saving || roles.length === 0} className="btn-primary inline-flex items-center gap-2 disabled:opacity-70">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <UserPlus className="h-4 w-4" aria-hidden="true" />}
+            {saving ? "Registrando…" : "Registrar subadministrador"}
           </button>
         </div>
       </form>
 
-      <section className="rounded-xl border border-white/10 bg-brand-surface p-5" aria-labelledby="subadmin-drafts-title">
-        <h3 id="subadmin-drafts-title" className="font-semibold text-brand-text">Borradores de esta sesión</h3>
-        {drafts.length === 0 ? (
-          <p className="mt-3 text-sm text-brand-muted">Aún no hay subadministradores preparados.</p>
+      <section className="rounded-xl border border-white/10 bg-brand-surface p-5" aria-labelledby="subadmin-list-title">
+        <h3 id="subadmin-list-title" className="font-semibold text-brand-text">Administradores registrados</h3>
+        {rowError ? (
+          <p role="alert" className="mt-3 rounded-lg border border-brand-negative/30 bg-brand-negative/10 px-3 py-2 text-sm text-brand-negative">
+            {rowError}
+          </p>
+        ) : null}
+        {subadmins.length === 0 ? (
+          <p className="mt-3 text-sm text-brand-muted">Aún no hay administradores registrados.</p>
         ) : (
           <ul className="mt-4 divide-y divide-white/10">
-            {drafts.map((draft) => (
-              <li key={draft.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium text-brand-text">{draft.name}</p>
-                  <p className="text-sm text-brand-muted">{draft.email}</p>
-                </div>
-                <span className="inline-flex w-fit items-center rounded-full bg-brand-accent/15 px-2.5 py-1 text-xs font-semibold text-brand-accent">
-                  {PERMITTED_SUBADMIN_ROLES.find((option) => option.value === draft.role)?.label ?? draft.role}
-                  {" · Pendiente de integración"}
-                </span>
-              </li>
-            ))}
+            {subadmins.map((item) => {
+              const isSelf = item.email.toLowerCase() === session?.user.email.toLowerCase()
+              // El servidor decide; aqui solo se evita ofrecer acciones que seguro rechazara.
+              const exceedsOwn = item.permissions.some((p) => !ownPermissions.has(p))
+              const locked = isSelf || exceedsOwn
+              return (
+                <li key={item.id} className="flex flex-col gap-3 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="font-medium text-brand-text">
+                      {item.name}
+                      {isSelf ? <span className="ml-2 text-xs text-brand-muted">(tú)</span> : null}
+                    </p>
+                    <p className="break-words text-sm text-brand-muted">{item.email}</p>
+                    <p className="mt-1 text-xs text-brand-muted">
+                      {item.permissions.map((p) => PERMISSION_LABELS[p] ?? p).join(" · ") || "Sin permisos"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label htmlFor={`role-${item.id}`} className="sr-only">
+                      Rol de {item.name}
+                    </label>
+                    <select
+                      id={`role-${item.id}`}
+                      value={item.roles[0] ?? ""}
+                      disabled={locked || changingId === item.id}
+                      onChange={(event) => void handleRoleChange(item, event.target.value)}
+                      title={isSelf ? "No puedes modificar tus propios privilegios" : exceedsOwn ? "Tiene permisos que tu cuenta no posee" : undefined}
+                      className="input-base w-44 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {!roles.some((option) => option.name === item.roles[0]) && item.roles[0] ? (
+                        <option value={item.roles[0]}>{roleLabel(item.roles[0])}</option>
+                      ) : null}
+                      {roles.map((option) => (
+                        <option key={option.name} value={option.name}>
+                          {roleLabel(option.name)}
+                        </option>
+                      ))}
+                    </select>
+                    {changingId === item.id ? <Loader2 className="h-4 w-4 animate-spin text-brand-muted" aria-hidden="true" /> : null}
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>
@@ -1715,7 +1827,34 @@ function SubadminManagement() {
 }
 
 export function AdminModule() {
+  const { session } = useAuth()
   const [tab, setTab] = useState<AdminTab>("dashboard")
+  const [access, setAccess] = useState<AdminAccess | null>(null)
+
+  // Los permisos vienen del servidor; si no se pueden leer, la pestaña restringida simplemente no se ofrece.
+  useEffect(() => {
+    let active = true
+    if (!session) {
+      setAccess(null)
+      return () => {
+        active = false
+      }
+    }
+    getAdminAccessApi(session.token)
+      .then((data) => {
+        if (active) setAccess(data)
+      })
+      .catch((error) => {
+        console.error("Error verificando permisos administrativos:", error instanceof Error ? error.name : "error")
+        if (active) setAccess(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [session])
+
+  const canManageAdmins = access?.permissions.includes("ADMINS_GESTIONAR") ?? false
+  const activeTab: AdminTab = tab === "subadmins" && !canManageAdmins ? "dashboard" : tab
 
   return (
     <div className="space-y-6">
@@ -1725,7 +1864,7 @@ export function AdminModule() {
           onClick={() => setTab("dashboard")}
           className={cn(
             "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-            tab === "dashboard" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
+            activeTab === "dashboard" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
           )}
         >
           Panel administrativo
@@ -1735,25 +1874,33 @@ export function AdminModule() {
           onClick={() => setTab("clients")}
           className={cn(
             "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-            tab === "clients" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
+            activeTab === "clients" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
           )}
         >
           Gestión de usuarios
         </button>
-        <button
-          type="button"
-          onClick={() => setTab("subadmins")}
-          aria-current={tab === "subadmins" ? "page" : undefined}
-          className={cn(
-            "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-            tab === "subadmins" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
-          )}
-        >
-          Subadministradores
-        </button>
+        {canManageAdmins ? (
+          <button
+            type="button"
+            onClick={() => setTab("subadmins")}
+            aria-current={activeTab === "subadmins" ? "page" : undefined}
+            className={cn(
+              "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
+              activeTab === "subadmins" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
+            )}
+          >
+            Subadministradores
+          </button>
+        ) : null}
       </div>
 
-      {tab === "dashboard" ? <AdminDashboard /> : tab === "clients" ? <ClientManagement /> : <SubadminManagement />}
+      {activeTab === "dashboard" ? (
+        <AdminDashboard />
+      ) : activeTab === "clients" ? (
+        <ClientManagement />
+      ) : access ? (
+        <SubadminManagement access={access} />
+      ) : null}
     </div>
   )
 }

@@ -277,6 +277,59 @@ export async function updateProfileApi(
   })
 }
 
+// ==========================================
+// SUBADMINISTRADORES, ROLES Y PERMISOS (HU16)
+// ==========================================
+
+export type AdminAccess = { roles: string[]; permissions: string[] }
+
+export type AssignableRole = { name: string; description: string | null; permissions: string[] }
+
+export type SubadminView = {
+  id: string
+  name: string
+  email: string
+  status: "active" | "inactive"
+  roles: string[]
+  permissions: string[]
+  createdAt: string
+}
+
+const adminHeaders = (token: string) => ({ Authorization: `Bearer ${token}` })
+
+/** Roles y permisos efectivos del administrador autenticado (el servidor es la fuente de verdad). */
+export async function getAdminAccessApi(token: string): Promise<AdminAccess> {
+  return fetchApi<AdminAccess>("/admin/access", { method: "GET", headers: adminHeaders(token) })
+}
+
+/** Solo los roles que el administrador puede asignar sin superar sus propios permisos. */
+export async function getAssignableRolesApi(token: string): Promise<AssignableRole[]> {
+  return fetchApi<AssignableRole[]>("/admin/subadmins/assignable-roles", { method: "GET", headers: adminHeaders(token) })
+}
+
+export async function getSubadminsApi(token: string): Promise<SubadminView[]> {
+  return fetchApi<SubadminView[]>("/admin/subadmins", { method: "GET", headers: adminHeaders(token) })
+}
+
+export async function createSubadminApi(
+  token: string,
+  payload: { name: string; email: string; password: string; roles: string[] },
+): Promise<SubadminView> {
+  return fetchApi<SubadminView>("/admin/subadmins", {
+    method: "POST",
+    headers: adminHeaders(token),
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function changeSubadminRolesApi(token: string, id: string, roles: string[]): Promise<SubadminView> {
+  return fetchApi<SubadminView>(`/admin/subadmins/${encodeURIComponent(id)}/roles`, {
+    method: "PATCH",
+    headers: adminHeaders(token),
+    body: JSON.stringify({ roles }),
+  })
+}
+
 export async function forgotPasswordApi(identifier: string) {
   return fetchApi<{ success: boolean; message: string }>("/auth/forgot-password", {
     method: "POST",
