@@ -6,6 +6,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { PermissionsGuard, RequirePermissions } from '../access-control/permissions.guard';
 import { PERMISSIONS } from '../access-control/permissions';
+import { PermissionsService } from '../access-control/permissions.service';
+import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('Módulo Administrativo (Admin-Service)')
 @ApiBearerAuth()
@@ -13,7 +15,18 @@ import { PERMISSIONS } from '../access-control/permissions';
 @Roles('admin')
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly permissions: PermissionsService,
+  ) {}
+
+  /** Roles y permisos efectivos del administrador autenticado, leidos de la BD (para ajustar la interfaz). */
+  @Get('access')
+  @ApiOperation({ summary: 'Roles y permisos efectivos del administrador autenticado' })
+  async getAccess(@CurrentUser() user: AuthUser) {
+    const access = await this.permissions.effectiveFor(user.id);
+    return { roles: access.roles, permissions: [...access.permissions].sort() };
+  }
 
   @Get('metrics')
   @RequirePermissions(PERMISSIONS.METRICAS_VER)

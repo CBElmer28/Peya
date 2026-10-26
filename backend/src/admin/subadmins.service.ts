@@ -44,6 +44,27 @@ export class SubadminsService {
     return result;
   }
 
+  /** Roles activos cuyos permisos el actor posee por completo: los unicos que puede asignar. */
+  async assignableRoles(actor: AuthUser): Promise<{ name: string; description: string | null; permissions: string[] }[]> {
+    const actorAccess = await this.permissions.effectiveFor(actor.id);
+    const rows = await this.prisma.$queryRaw<{ rol: string; descripcion: string | null; codigo: string | null }[]>`
+      SELECT r.nombre AS rol, r.descripcion, p.codigo
+      FROM rol r
+      LEFT JOIN rol_permiso rp ON rp.id_rol = r.id
+      LEFT JOIN permiso p ON p.id = rp.id_permiso
+      WHERE r.estado = 'ACTIVO'`;
+    const byRole = new Map<string, { description: string | null; permissions: Set<string> }>();
+    for (const row of rows) {
+      const entry = byRole.get(row.rol) ?? { description: row.descripcion, permissions: new Set<string>() };
+      if (row.codigo) entry.permissions.add(row.codigo);
+      byRole.set(row.rol, entry);
+    }
+    return [...byRole.entries()]
+      .filter(([, r]) => [...r.permissions].every((p) => actorAccess.permissions.has(p)))
+      .map(([name, r]) => ({ name, description: r.description, permissions: sorted(r.permissions) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   /** HU16: registro con identidad unica y roles autorizados. Todo en una transaccion junto con su auditoria. */
   async create(actor: AuthUser, dto: CreateSubadminDto, ip: string): Promise<SubadminView> {
     const email = dto.email.trim().toLowerCase();

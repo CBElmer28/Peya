@@ -26,6 +26,12 @@ export class SubadminsController {
     return this.service.list();
   }
 
+  @Get('assignable-roles')
+  @ApiOperation({ summary: 'Roles que el administrador autenticado puede asignar (sin superar sus propios permisos)' })
+  assignableRoles(@CurrentUser() actor: AuthUser) {
+    return this.service.assignableRoles(actor);
+  }
+
   @Post()
   // Campos desconocidos (p. ej. "permissions") se rechazan con 400: los privilegios solo se asignan por rol.
   @StrictBody({ allowed: ['name', 'email', 'password', 'roles'] })

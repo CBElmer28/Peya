@@ -424,4 +424,60 @@ describe('Sprint 3 - HU16 subadministradores, permisos y auditoria (PostgreSQL r
       expect(bad.status).toBeGreaterThanOrEqual(400);
     });
   });
+
+  describe('accesos efectivos y roles asignables (interfaz de gestion)', () => {
+    it('GET /admin/access devuelve los roles y permisos reales de quien consulta', async () => {
+      const full = await http().get('/api/admin/access').set(auth(SUPERADMIN));
+      expect(full.status).toBe(200);
+      expect(full.body.roles).toEqual(['ADMIN']);
+      expect(full.body.permissions).toEqual(['ADMINS_GESTIONAR', 'CLIENTES_GESTIONAR', 'CLIENTES_VER', 'CUENTAS_SUPERVISAR', 'METRICAS_VER']);
+
+      const support = await makeAdmin([SOPORTE]);
+      const limited = await http().get('/api/admin/access').set(auth(support));
+      expect(limited.body).toEqual({ roles: ['SOPORTE'], permissions: ['CLIENTES_VER', 'CUENTAS_SUPERVISAR', 'METRICAS_VER'] });
+
+      const legacy = await makeClient('ADMIN');
+      const legacyAccess = await http().get('/api/admin/access').set(auth(legacy));
+      expect(legacyAccess.body.permissions).not.toContain('ADMINS_GESTIONAR');
+    });
+
+    it('GET /admin/access exige autenticacion y rol administrativo', async () => {
+      const client = await makeClient();
+      expect((await http().get('/api/admin/access')).status).toBe(401);
+      expect((await http().get('/api/admin/access').set(auth(client))).status).toBe(403);
+    });
+
+    it('los permisos reflejan un cambio de roles al instante', async () => {
+      const sub = await makeAdmin([SOPORTE]);
+      expect((await changeRoles(SUPERADMIN, sub.id, [GESTOR])).status).toBe(200);
+      expect((await http().get('/api/admin/access').set(auth(sub))).body.permissions).toEqual(['ADMINS_GESTIONAR']);
+    });
+
+    it('assignable-roles: ADMIN ve todos; un gestor delegado solo el rol que no supera sus permisos', async () => {
+      const all = await http().get('/api/admin/subadmins/assignable-roles').set(auth(SUPERADMIN));
+      expect(all.status).toBe(200);
+      const names = all.body.map((r: { name: string }) => r.name);
+      expect(names).toEqual(expect.arrayContaining(['ADMIN', 'SOPORTE', GESTOR]));
+      const soporte = all.body.find((r: { name: string }) => r.name === 'SOPORTE');
+      expect(soporte.permissions).toEqual(['CLIENTES_VER', 'CUENTAS_SUPERVISAR', 'METRICAS_VER']);
+
+      const delegated = await http().get('/api/admin/subadmins/assignable-roles').set(auth(GESTOR_ACTOR));
+      expect(delegated.body.map((r: { name: string }) => r.name)).toEqual([GESTOR]);
+    });
+
+    it('assignable-roles exige ADMINS_GESTIONAR (SOPORTE y clientes -> 403)', async () => {
+      const support = await makeAdmin([SOPORTE]);
+      const client = await makeClient();
+      expect((await http().get('/api/admin/subadmins/assignable-roles').set(auth(support))).status).toBe(403);
+      expect((await http().get('/api/admin/subadmins/assignable-roles').set(auth(client))).status).toBe(403);
+      expect((await http().get('/api/admin/subadmins/assignable-roles')).status).toBe(401);
+    });
+
+    it('todo rol listado como asignable realmente se puede asignar (coherencia con la regla de escalada)', async () => {
+      const roles = (await http().get('/api/admin/subadmins/assignable-roles').set(auth(GESTOR_ACTOR))).body.map((r: { name: string }) => r.name);
+      for (const role of roles) {
+        expect((await create(GESTOR_ACTOR, newSubadmin({ roles: [role] }))).status).toBe(201);
+      }
+    });
+  });
 });
