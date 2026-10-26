@@ -7,3 +7,5 @@ databaseChangeLog:
       file: db/changelog/v3_sesion_admin_roles.yaml
   - include:
       file: db/changelog/v4_seguridad_rls.yaml
+  - include:
+      file: db/changelog/v5_notificaciones.yaml

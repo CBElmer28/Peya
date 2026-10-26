@@ -39,6 +39,7 @@ model cliente {
   fecha_actualizacion DateTime       @default(now()) @db.Timestamptz(6)
   cuenta              cuenta[]
   idempotencia        idempotencia[]
+  notificacion        notificacion[]
   sesion              sesion[]
 }
 
@@ -56,6 +57,7 @@ model cuenta {
   cliente                                                                 cliente                  @relation(fields: [id_cliente], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tipo_cuenta                                                             tipo_cuenta              @relation(fields: [id_tipo_cuenta], references: [id], onDelete: NoAction, onUpdate: NoAction)
   movimiento                                                              movimiento[]
+  notificacion                                                            notificacion[]
   transferencia_externa_transferencia_externa_id_cuenta_destinoTocuenta   transferencia_externa[]  @relation("transferencia_externa_id_cuenta_destinoTocuenta")
   transferencia_externa_transferencia_externa_id_cuenta_origenTocuenta    transferencia_externa[]  @relation("transferencia_externa_id_cuenta_origenTocuenta")
   transferencia_internas_transferencia_internas_id_cuenta_destinoTocuenta transferencia_internas[] @relation("transferencia_internas_id_cuenta_destinoTocuenta")
@@ -149,6 +151,7 @@ model transferencia_externa {
   estado                                                 String       @default("PENDIENTE") @db.VarChar(10)
   fecha_creacion                                         DateTime     @default(now()) @db.Timestamptz(6)
   movimiento                                             movimiento[]
+  notificacion                                           notificacion[]
   cuenta_transferencia_externa_id_cuenta_destinoTocuenta cuenta       @relation("transferencia_externa_id_cuenta_destinoTocuenta", fields: [id_cuenta_destino], references: [id], onDelete: NoAction, onUpdate: NoAction)
   cuenta_transferencia_externa_id_cuenta_origenTocuenta  cuenta       @relation("transferencia_externa_id_cuenta_origenTocuenta", fields: [id_cuenta_origen], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -223,4 +226,22 @@ model sesion {
   ip_origen        String?   @db.VarChar(45)
   admin            admin?    @relation(fields: [id_admin], references: [id], onDelete: Cascade, onUpdate: NoAction)
   cliente          cliente?  @relation(fields: [id_cliente], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model notificacion {
+  id                       String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_cliente               String                 @db.Uuid
+  tipo                     String                 @default("TRANSFERENCIA") @db.VarChar(20)
+  titulo                   String                 @db.VarChar(200)
+  detalle                  String                 @db.VarChar(200)
+  leida                    Boolean                @default(false)
+  id_transferencia_externa String                 @db.Uuid
+  id_cuenta_destino        String                 @db.Uuid
+  fecha_creacion           DateTime               @default(now()) @db.Timestamptz(6)
+  cliente                  cliente                @relation(fields: [id_cliente], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cuenta                   cuenta                 @relation(fields: [id_cuenta_destino], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transferencia_externa    transferencia_externa  @relation(fields: [id_transferencia_externa], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id_cliente, id_transferencia_externa], map: "ux_notificacion_transferencia")
+  @@index([id_cliente, fecha_creacion(sort: Desc), id(sort: Desc)], map: "ix_notificacion_cliente_fecha")
 }
