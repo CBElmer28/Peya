@@ -51,15 +51,15 @@ function SectionCard({
 }
 
 export function ProfileView() {
-  const { session } = useAuth()
+  const { session, setSession } = useAuth()
   const [profile, setProfile] = useState<ProfileResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [editing, setEditing] = useState(false)
-  const [editName, setEditName] = useState("")
   const [editEmail, setEditEmail] = useState("")
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string }>({})
+  const [editPassword, setEditPassword] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
   const [editError, setEditError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -112,8 +112,8 @@ export function ProfileView() {
 
   function openEditor() {
       if (!profile) return
-      setEditName(profile.name)
       setEditEmail(profile.email)
+      setEditPassword("")
       setFieldErrors({})
       setEditError(null)
       setSaved(false)
@@ -122,23 +122,53 @@ export function ProfileView() {
 
   function closeEditor() {
       setEditing(false)
+      setEditPassword("")
       setFieldErrors({})
       setEditError(null)
+  }
+
+  // Mensajes por codigo de error del backend (HU15); el texto del servidor nunca incluye tus datos.
+  function describeUpdateError(err: unknown): string {
+    const body = typeof err === "object" && err !== null && "body" in err ? (err as { body?: { error?: string } }).body : undefined
+    switch (body?.error) {
+      case "INVALID_CURRENT_PASSWORD":
+        return "La contraseña actual es incorrecta."
+      case "CURRENT_PASSWORD_REQUIRED":
+        return "Para cambiar el correo debes indicar tu contraseña actual."
+      case "EMAIL_IN_USE":
+        return "Ese correo electrónico ya está en uso por otro usuario."
+      case "NO_CHANGES":
+        return "No hay cambios para guardar."
+      case "PROFILE_CONFLICT":
+        return "Tu perfil se modificó desde otra sesión. Recargamos tus datos: revisa e inténtalo de nuevo."
+      case "FIELD_NOT_EDITABLE":
+        return "Alguno de los datos enviados no se puede modificar desde tu perfil."
+    }
+    const statusCode = typeof err === "object" && err !== null && "statusCode" in err ? (err as { statusCode?: number }).statusCode : undefined
+    if (statusCode === 401 || statusCode === 403) {
+      return "No tienes permisos para guardar estos cambios. Contacta con soporte si necesitas actualizar tus datos."
+    }
+    return err instanceof Error
+      ? `No se pudieron guardar los cambios: ${err.message}`
+      : "No se pudieron guardar los cambios. Inténtalo nuevamente."
   }
 
   async function handleProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
       event.preventDefault()
       if (!profile || !session) return
 
-      const nextErrors: { name?: string; email?: string } = {}
-      const name = editName.trim()
+      const nextErrors: { email?: string; password?: string } = {}
       const email = editEmail.trim()
-      if (!name) nextErrors.name = "Ingresa tu nombre completo."
-      else if (name.length < 2) nextErrors.name = "El nombre debe tener al menos 2 caracteres."
       if (!email) nextErrors.email = "Ingresa tu correo electrónico."
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         nextErrors.email = "Escribe un correo válido, por ejemplo nombre@dominio.com."
+      } else if (email.toLowerCase() === profile.email.toLowerCase()) {
+        setFieldErrors({})
+        setSaved(false)
+        setEditError("No hay cambios para guardar: el correo es igual al actual.")
+        return
       }
+      if (!nextErrors.email && !editPassword) nextErrors.password = "Ingresa tu contraseña actual para confirmar el cambio."
 
       setFieldErrors(nextErrors)
       setEditError(null)
@@ -147,22 +177,24 @@ export function ProfileView() {
 
       setSaving(true)
       try {
-        const updatedProfile = await updateProfileApi(session.token, profile.id, { name, email })
+        const updatedProfile = await updateProfileApi(session.token, {
+          email,
+          currentPassword: editPassword,
+          expectedUpdatedAt: profile.updatedAt,
+        })
         setProfile(updatedProfile)
+        setSession({ ...session, user: { ...session.user, email: updatedProfile.email } })
         setEditing(false)
+        setEditPassword("")
         setSaved(true)
       } catch (err) {
-        console.error("Error actualizando el perfil:", err)
-        const statusCode = typeof err === "object" && err !== null && "statusCode" in err
-          ? err.statusCode
-          : undefined
-        setEditError(
-          statusCode === 401 || statusCode === 403
-            ? "No tienes permisos para guardar estos cambios. Contacta con soporte si necesitas actualizar tus datos."
-            : err instanceof Error
-              ? `No se pudieron guardar los cambios: ${err.message}`
-              : "No se pudieron guardar los cambios. Inténtalo nuevamente.",
-        )
+        console.error("Error actualizando el perfil:", err instanceof Error ? err.name : "error")
+        const code = typeof err === "object" && err !== null && "body" in err ? (err as { body?: { error?: string } }).body?.error : undefined
+        if (code === "PROFILE_CONFLICT") {
+          setEditing(false)
+          setRetryCount((count) => count + 1)
+        }
+        setEditError(describeUpdateError(err))
       } finally {
         setSaving(false)
       }
@@ -235,7 +267,7 @@ export function ProfileView() {
               <form onSubmit={handleProfileSubmit} noValidate className="mt-6 border-t border-white/10 pt-5">
                 <h3 className="text-base font-semibold text-brand-text">Editar datos personales</h3>
                 <p className="mt-1 text-sm text-brand-muted">
-                  Actualiza tu nombre y correo. El DNI no se puede modificar; el teléfono no está habilitado para edición.
+                  Por ahora solo puedes actualizar tu correo electrónico. Tu nombre, DNI y teléfono no se pueden modificar desde aquí.
                 </p>
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   <div>
@@ -244,29 +276,14 @@ export function ProfileView() {
                     </label>
                     <input
                       id="profile-edit-name"
-                      name="name"
-                      autoComplete="name"
-                      value={editName}
-                      onChange={(event) => setEditName(event.target.value)}
-                      onBlur={() => {
-                        const value = editName.trim()
-                        setFieldErrors((current) => ({
-                          ...current,
-                          name: !value
-                            ? "Ingresa tu nombre completo."
-                            : value.length < 2
-                              ? "El nombre debe tener al menos 2 caracteres."
-                              : undefined,
-                        }))
-                      }}
-                      maxLength={150}
-                      aria-invalid={Boolean(fieldErrors.name)}
-                      aria-describedby={fieldErrors.name ? "profile-edit-name-error" : undefined}
-                      className="mt-1 w-full rounded-lg border border-white/10 bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-accent"
+                      value={profile.name || unavailable}
+                      readOnly
+                      aria-describedby="profile-edit-name-help"
+                      className="mt-1 w-full cursor-not-allowed rounded-lg border border-white/10 bg-brand-surface-2 px-3 py-2 text-sm text-brand-muted"
                     />
-                    {fieldErrors.name ? (
-                      <p id="profile-edit-name-error" className="mt-1 text-xs text-brand-negative">{fieldErrors.name}</p>
-                    ) : null}
+                    <p id="profile-edit-name-help" className="mt-1 text-xs text-brand-muted">
+                      Se toma de tu identidad (RENIEC) y no se puede modificar.
+                    </p>
                   </div>
                   <div>
                     <label htmlFor="profile-edit-email" className="block text-sm font-medium text-brand-text">
@@ -311,7 +328,27 @@ export function ProfileView() {
                       className="mt-1 w-full cursor-not-allowed rounded-lg border border-white/10 bg-brand-surface-2 px-3 py-2 text-sm text-brand-muted"
                     />
                     <p id="profile-edit-phone-help" className="mt-1 text-xs text-brand-muted">
-                      El servicio de perfil actual no permite actualizar este dato.
+                      Este dato no está habilitado para edición.
+                    </p>
+                  </div>
+                  <div>
+                    <label htmlFor="profile-edit-password" className="block text-sm font-medium text-brand-text">
+                      Contraseña actual
+                    </label>
+                    <input
+                      id="profile-edit-password"
+                      name="currentPassword"
+                      type="password"
+                      autoComplete="current-password"
+                      value={editPassword}
+                      onChange={(event) => setEditPassword(event.target.value)}
+                      maxLength={128}
+                      aria-invalid={Boolean(fieldErrors.password)}
+                      aria-describedby="profile-edit-password-help"
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-accent"
+                    />
+                    <p id="profile-edit-password-help" className={fieldErrors.password ? "mt-1 text-xs text-brand-negative" : "mt-1 text-xs text-brand-muted"}>
+                      {fieldErrors.password ?? "Necesaria para confirmar el cambio de correo."}
                     </p>
                   </div>
                 </div>

@@ -252,6 +252,7 @@ export type ProfileResponse = {
   phone?: string
   status?: "active" | "inactive"
   registeredAt?: string
+  updatedAt?: string
 }
 
 export async function getProfileApi(token: string): Promise<ProfileResponse> {
@@ -261,12 +262,15 @@ export async function getProfileApi(token: string): Promise<ProfileResponse> {
   })
 }
 
+/**
+ * HU15 · PATCH /users/me. Solo el correo es editable (exige la contraseña actual); nombre, DNI y
+ * teléfono los rechaza el servidor. expectedUpdatedAt evita pisar cambios hechos desde otra sesión.
+ */
 export async function updateProfileApi(
   token: string,
-  userId: string,
-  payload: { name: string; email: string },
+  payload: { email: string; currentPassword: string; expectedUpdatedAt?: string },
 ): Promise<ProfileResponse> {
-  return fetchApi<ProfileResponse>(`/users/${encodeURIComponent(userId)}`, {
+  return fetchApi<ProfileResponse>("/users/me", {
     method: "PATCH",
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
