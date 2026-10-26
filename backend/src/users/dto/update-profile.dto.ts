@@ -1,13 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsISO8601, IsOptional, IsString, Length, Matches, MaxLength, ValidateIf } from 'class-validator';
+import { IsEmail, IsISO8601, IsOptional, IsString, Length, MaxLength, ValidateIf } from 'class-validator';
 
 const normalizeEmail = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
-const normalizePhone = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.replace(/[\s-]/g, '') : value);
 
 /**
- * HU15: unicos campos que el titular puede cambiar por si mismo. Nombre, DNI (RENIEC), rol y estado
- * no son editables aqui: ver PROTECTED_PROFILE_FIELDS.
+ * HU15: unico campo de datos que el titular puede cambiar por si mismo: el correo. Nombre, DNI (RENIEC),
+ * telefono, rol y estado no son editables aqui (ver PROTECTED_PROFILE_FIELDS); la documentacion solo
+ * habla de "datos habilitados para actualizacion" y no habilita el telefono. Para habilitarlo despues basta
+ * con agregar el campo aqui, quitarlo de PROTECTED_PROFILE_FIELDS y restaurar su manejo en el servicio.
  */
 export class UpdateProfileDto {
   @ApiPropertyOptional({ example: 'nuevo@correo.com', description: 'Cambiarlo exige currentPassword' })
@@ -16,14 +17,6 @@ export class UpdateProfileDto {
   @IsEmail({}, { message: 'El formato de correo electrónico no es válido' })
   @MaxLength(255, { message: 'El correo no puede superar 255 caracteres' })
   email?: string;
-
-  @ApiPropertyOptional({ example: '987654321', description: 'Celular peruano de 9 digitos que inicia en 9' })
-  @ValidateIf((_, v) => v !== undefined)
-  @Transform(normalizePhone)
-  @Matches(/^(\+51)?9\d{8}$/, {
-    message: 'El teléfono debe ser un celular peruano válido de 9 dígitos comenzando con 9',
-  })
-  phone?: string;
 
   @ApiPropertyOptional({ description: 'Contraseña actual; obligatoria solo para cambiar el correo' })
   @IsOptional()
@@ -41,7 +34,7 @@ export class UpdateProfileDto {
 }
 
 /** Unico contenido aceptado en PATCH /users/me. */
-export const PROFILE_EDITABLE_FIELDS = ['email', 'phone', 'currentPassword', 'expectedUpdatedAt'];
+export const PROFILE_EDITABLE_FIELDS = ['email', 'currentPassword', 'expectedUpdatedAt'];
 
 /** Campos que existen en el perfil pero que el titular nunca puede modificar por esta via. */
 export const PROTECTED_PROFILE_FIELDS = [
@@ -50,6 +43,8 @@ export const PROTECTED_PROFILE_FIELDS = [
   'nombres',
   'apellidos',
   'dni',
+  'phone',
+  'telefono',
   'role',
   'rol',
   'status',

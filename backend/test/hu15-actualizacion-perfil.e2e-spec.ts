@@ -59,6 +59,10 @@ describe('Sprint 3 - HU15 actualizacion del perfil (PostgreSQL real)', () => {
     await app.close();
   });
 
+  const newEmail = () => `nuevo${uniq()}@test.local`;
+  const change = (a: Actor, extra: Record<string, unknown> = {}) =>
+    patch(a, { email: newEmail(), currentPassword: PASSWORD, ...extra });
+
   describe('validaciones', () => {
     let A: Actor;
     beforeAll(async () => {
@@ -66,42 +70,51 @@ describe('Sprint 3 - HU15 actualizacion del perfil (PostgreSQL real)', () => {
     });
 
     it('exige autenticacion (401)', async () => {
-      expect((await http().patch('/api/users/me').send({ phone: '911111111' })).status).toBe(401);
+      expect((await http().patch('/api/users/me').send({ email: newEmail(), currentPassword: PASSWORD })).status).toBe(401);
     });
 
-    it('cuerpo vacio o sin cambios reales -> 400 NO_CHANGES', async () => {
+    it('cuerpo vacio o correo igual al actual -> 400 NO_CHANGES', async () => {
       const empty = await patch(A, {});
       expect(empty.status).toBe(400);
       expect(empty.body.error).toBe('NO_CHANGES');
-      const same = await patch(A, { phone: '900000001' });
+      const same = await patch(A, { email: A.email.toUpperCase(), currentPassword: PASSWORD });
       expect(same.status).toBe(400);
       expect(same.body.error).toBe('NO_CHANGES');
     });
 
     it('formatos invalidos -> 400 y el valor enviado no se devuelve en el error', async () => {
-      for (const body of [{ phone: '12345' }, { phone: '812345678' }, { email: 'no-es-correo' }, { email: `${'a'.repeat(250)}@x.com` }]) {
-        const res = await patch(A, body);
+      for (const email of ['no-es-correo', `${'a'.repeat(250)}@x.com`, 'sin@dominio', 'dos@@x.com']) {
+        const res = await patch(A, { email, currentPassword: PASSWORD });
         expect(res.status).toBe(400);
-        const echoed = Object.values(body)[0] as string;
-        expect(JSON.stringify(res.body)).not.toContain(echoed);
+        expect(JSON.stringify(res.body)).not.toContain(email);
       }
-      expect((await patch(A, { phone: null })).status).toBe(400);
+      expect((await patch(A, { email: null })).status).toBe(400);
       expect((await patch(A, { email: 123 })).status).toBe(400);
-      expect((await patch(A, { expectedUpdatedAt: 'ayer' })).status).toBe(400);
+      expect((await patch(A, { email: newEmail(), currentPassword: 12345 })).status).toBe(400);
+      expect((await patch(A, { email: newEmail(), currentPassword: PASSWORD, expectedUpdatedAt: 'ayer' })).status).toBe(400);
+      expect((await row(A.id)).correo).toBe(A.email);
     });
 
-    it('campos desconocidos -> 400', async () => {
-      const res = await patch(A, { phone: '911111111', foo: 'bar' });
+    it('campos desconocidos -> 400 y no se persiste nada', async () => {
+      const res = await change(A, { foo: 'bar' });
       expect(res.status).toBe(400);
-      expect((await row(A.id)).telefono).toBe('900000001');
+      expect(res.body.error).toBe('UNKNOWN_FIELDS');
+      expect((await row(A.id)).correo).toBe(A.email);
+    });
+
+    it('un cuerpo que no es un objeto -> 400', async () => {
+      const res = await http().patch('/api/users/me').set(auth(A)).set('Content-Type', 'application/json').send('[1,2]');
+      expect(res.status).toBe(400);
     });
   });
 
   describe('autorizacion por campo', () => {
-    it('name, dni, rol, estado, id y secretos -> 403 y NADA se persiste (ni el campo valido del mismo cuerpo)', async () => {
+    it('name, dni, telefono, rol, estado, id y secretos -> 403 y NADA se persiste (ni el correo valido del mismo cuerpo)', async () => {
       const A = await makeActor();
       const before = await row(A.id);
       for (const extra of [
+        { phone: '955555555' },
+        { telefono: '955555555' },
         { role: 'admin' },
         { rol: 'ADMIN' },
         { name: 'Otro Nombre' },
@@ -111,11 +124,11 @@ describe('Sprint 3 - HU15 actualizacion del perfil (PostgreSQL real)', () => {
         { passwordHash: 'x' },
         { password: 'Nueva-Clave-1' },
       ]) {
-        const res = await patch(A, { phone: '955555555', ...extra });
-        expect(res.status).toBe(403);
-        expect(res.body.error).toBe('FIELD_NOT_EDITABLE');
+        const res = await change(A, extra);
+        expect({ extra, status: res.status, error: res.body.error }).toEqual({ extra, status: 403, error: 'FIELD_NOT_EDITABLE' });
       }
       const after = await row(A.id);
+      expect(after.correo).toBe(before.correo);
       expect(after.telefono).toBe('900000001');
       expect(after.rol).toBe('CLIENTE');
       expect(after.dni).toBe(before.dni);
@@ -133,53 +146,48 @@ describe('Sprint 3 - HU15 actualizacion del perfil (PostgreSQL real)', () => {
     it('un id en query o header no cambia a quien se actualiza: siempre el titular del token', async () => {
       const A = await makeActor();
       const B = await makeActor();
-      const res = await http().patch('/api/users/me').query({ id: B.id }).set(auth(A)).set('X-User-Id', B.id).send({ phone: '977777777' });
+      const target = newEmail();
+      const res = await http().patch('/api/users/me').query({ id: B.id }).set(auth(A)).set('X-User-Id', B.id).send({ email: target, currentPassword: PASSWORD });
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(A.id);
-      expect((await row(A.id)).telefono).toBe('977777777');
-      expect((await row(B.id)).telefono).toBe('900000001');
+      expect((await row(A.id)).correo).toBe(target);
+      expect((await row(B.id)).correo).toBe(B.email);
     });
   });
 
   describe('actualizacion y reglas de negocio', () => {
-    it('cambia el telefono (normalizado) y avanza updatedAt', async () => {
-      const A = await makeActor();
-      const before = await profile(A);
-      const res = await patch(A, { phone: '+51 977-123-456' });
-      expect(res.status).toBe(200);
-      expect(res.body.phone).toBe('977123456');
-      expect(new Date(res.body.updatedAt).getTime()).toBeGreaterThan(new Date(before.updatedAt).getTime());
-      expect((await profile(A)).phone).toBe('977123456');
-    });
-
     it('cambiar el correo exige la contrasena actual', async () => {
       const A = await makeActor();
-      const none = await patch(A, { email: `nuevo${uniq()}@test.local` });
+      const none = await patch(A, { email: newEmail() });
       expect(none.status).toBe(400);
       expect(none.body.error).toBe('CURRENT_PASSWORD_REQUIRED');
 
-      const wrong = await patch(A, { email: `nuevo${uniq()}@test.local`, currentPassword: 'Incorrecta-1' });
+      const wrong = await patch(A, { email: newEmail(), currentPassword: 'Incorrecta-1' });
       expect(wrong.status).toBe(403);
       expect(wrong.body.error).toBe('INVALID_CURRENT_PASSWORD');
       expect(JSON.stringify(wrong.body)).not.toContain('Incorrecta-1');
       expect((await row(A.id)).correo).toBe(A.email);
 
+      const before = await profile(A);
       const target = `Nuevo${uniq()}@Test.Local`;
       const ok = await patch(A, { email: target, currentPassword: PASSWORD });
       expect(ok.status).toBe(200);
       expect(ok.body.email).toBe(target.toLowerCase());
+      expect(new Date(ok.body.updatedAt).getTime()).toBeGreaterThan(new Date(before.updatedAt).getTime());
       expect((await row(A.id)).correo).toBe(target.toLowerCase());
+      // El telefono no se toca.
+      expect((await row(A.id)).telefono).toBe('900000001');
+      // Con el correo nuevo se puede iniciar sesion.
+      expect((await http().post('/api/auth/login').send({ email: target.toLowerCase(), password: PASSWORD })).status).toBe(200);
     });
 
-    it('correo ya usado (sin distinguir mayusculas) -> 409 y el telefono del mismo cuerpo tampoco se aplica', async () => {
+    it('correo ya usado (sin distinguir mayusculas) -> 409 y no cambia nada', async () => {
       const A = await makeActor();
       const B = await makeActor();
-      const res = await patch(A, { email: B.email.toUpperCase(), phone: '966666666', currentPassword: PASSWORD });
+      const res = await patch(A, { email: B.email.toUpperCase(), currentPassword: PASSWORD });
       expect(res.status).toBe(409);
       expect(res.body.error).toBe('EMAIL_IN_USE');
-      const after = await row(A.id);
-      expect(after.correo).toBe(A.email);
-      expect(after.telefono).toBe('900000001');
+      expect((await row(A.id)).correo).toBe(A.email);
     });
 
     it('el correo de un administrador tampoco se puede tomar', async () => {
@@ -190,7 +198,7 @@ describe('Sprint 3 - HU15 actualizacion del perfil (PostgreSQL real)', () => {
       expect(res.status).toBe(409);
     });
 
-    it('administrador: puede cambiar su correo pero no tiene telefono (403)', async () => {
+    it('administrador: puede cambiar su correo; el telefono (que no tiene) esta protegido (403)', async () => {
       const email = `adm${uniq()}@test.local`;
       const adm = await prisma.admin.create({ data: { nombre_usuario: 'Admin Y', correo: email, password_hash: bcrypt.hashSync(PASSWORD, 4) } });
       await prisma.admin_rol.create({ data: { id_admin: adm.id, id_rol: 2 } });
@@ -198,11 +206,11 @@ describe('Sprint 3 - HU15 actualizacion del perfil (PostgreSQL real)', () => {
       expect(login.status).toBe(200);
       const token = { Authorization: `Bearer ${login.body.accessToken}` };
       expect((await http().patch('/api/users/me').set(token).send({ phone: '911111111' })).status).toBe(403);
-      const newEmail = `adm${uniq()}@test.local`;
-      const ok = await http().patch('/api/users/me').set(token).send({ email: newEmail, currentPassword: PASSWORD });
+      const newAdminEmail = `adm${uniq()}@test.local`;
+      const ok = await http().patch('/api/users/me').set(token).send({ email: newAdminEmail, currentPassword: PASSWORD });
       expect(ok.status).toBe(200);
-      expect(ok.body.email).toBe(newEmail);
-      expect((await prisma.admin.findUnique({ where: { id: adm.id } })).correo).toBe(newEmail);
+      expect(ok.body.email).toBe(newAdminEmail);
+      expect((await prisma.admin.findUnique({ where: { id: adm.id } })).correo).toBe(newAdminEmail);
     });
   });
 
@@ -210,27 +218,27 @@ describe('Sprint 3 - HU15 actualizacion del perfil (PostgreSQL real)', () => {
     it('expectedUpdatedAt: la segunda escritura con una version vieja -> 409 y no pisa la primera', async () => {
       const A = await makeActor();
       const v0 = (await profile(A)).updatedAt;
-      const first = await patch(A, { phone: '911000001', expectedUpdatedAt: v0 });
-      expect(first.status).toBe(200);
-      const stale = await patch(A, { phone: '911000002', expectedUpdatedAt: v0 });
+      const first = newEmail();
+      expect((await patch(A, { email: first, currentPassword: PASSWORD, expectedUpdatedAt: v0 })).status).toBe(200);
+      const stale = await patch(A, { email: newEmail(), currentPassword: PASSWORD, expectedUpdatedAt: v0 });
       expect(stale.status).toBe(409);
       expect(stale.body.error).toBe('PROFILE_CONFLICT');
-      expect((await row(A.id)).telefono).toBe('911000001');
+      expect((await row(A.id)).correo).toBe(first);
       // Releyendo la version vigente, la escritura procede.
       const v1 = (await profile(A)).updatedAt;
-      expect((await patch(A, { phone: '911000003', expectedUpdatedAt: v1 })).status).toBe(200);
+      expect((await patch(A, { email: newEmail(), currentPassword: PASSWORD, expectedUpdatedAt: v1 })).status).toBe(200);
     });
 
-    it('dos peticiones simultaneas con la misma version: exactamente una gana', async () => {
+    it('cuatro peticiones simultaneas con la misma version: exactamente una gana', async () => {
       const A = await makeActor();
       const v0 = (await profile(A)).updatedAt;
       const results = await Promise.all(
-        ['922000001', '922000002', '922000003', '922000004'].map((phone) => patch(A, { phone, expectedUpdatedAt: v0 })),
+        Array.from({ length: 4 }, () => patch(A, { email: newEmail(), currentPassword: PASSWORD, expectedUpdatedAt: v0 })),
       );
       expect(results.filter((r) => r.status === 200)).toHaveLength(1);
       expect(results.filter((r) => r.status === 409)).toHaveLength(3);
-      const winner = results.find((r) => r.status === 200).body.phone;
-      expect((await row(A.id)).telefono).toBe(winner);
+      const winner = results.find((r) => r.status === 200).body.email;
+      expect((await row(A.id)).correo).toBe(winner);
     });
 
     it('dos clientes que piden el mismo correo a la vez: uno obtiene 200 y el otro 409', async () => {
@@ -242,25 +250,30 @@ describe('Sprint 3 - HU15 actualizacion del perfil (PostgreSQL real)', () => {
         patch(B, { email: target, currentPassword: PASSWORD }),
       ]);
       expect([ra.status, rb.status].sort()).toEqual([200, 409]);
-      const owners = await prisma.cliente.count({ where: { correo: target } });
-      expect(owners).toBe(1);
+      expect(await prisma.cliente.count({ where: { correo: target } })).toBe(1);
     });
   });
 
   describe('datos personales fuera de URL y errores', () => {
     it('el endpoint no usa parametros de ruta ni query: no existe PATCH con datos en la URL', async () => {
       const A = await makeActor();
-      const res = await http().patch(`/api/users/me/${encodeURIComponent('911111111')}`).set(auth(A)).send({});
+      const res = await http().patch(`/api/users/me/${encodeURIComponent(A.email)}`).set(auth(A)).send({});
       expect(res.status).toBe(404);
     });
 
-    it('los errores 4xx no devuelven correo, telefono ni contrasena enviados', async () => {
+    it('los errores 4xx no devuelven correo ni contrasena enviados', async () => {
       const A = await makeActor();
       const email = `secreto${uniq()}@test.local`;
-      const res = await patch(A, { email, phone: '999999999', currentPassword: 'Secreta-Pass-1', extra: 'x' });
-      expect(res.status).toBe(400);
-      const raw = JSON.stringify(res.body);
-      for (const v of [email, '999999999', 'Secreta-Pass-1']) expect(raw).not.toContain(v);
+      for (const body of [
+        { email, currentPassword: 'Secreta-Pass-1', extra: 'x' },
+        { email, currentPassword: 'Secreta-Pass-1', phone: '999999999' },
+        { email, currentPassword: 'Secreta-Pass-1' },
+      ]) {
+        const res = await patch(A, body);
+        expect(res.status).toBeGreaterThanOrEqual(400);
+        const raw = JSON.stringify(res.body);
+        for (const v of [email, 'Secreta-Pass-1', '999999999']) expect(raw).not.toContain(v);
+      }
     });
   });
 });
