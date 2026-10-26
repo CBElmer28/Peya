@@ -68,6 +68,7 @@ describe('Sprint 3 - HU14 perfil de usuario (PostgreSQL real)', () => {
         phone: '987654321',
         status: 'active',
         registeredAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       });
     });
 
@@ -75,7 +76,7 @@ describe('Sprint 3 - HU14 perfil de usuario (PostgreSQL real)', () => {
       const A = await makeActor();
       const res = await http().get('/api/users/me').set(auth(A));
       expect(Object.keys(res.body).sort()).toEqual(
-        ['dni', 'email', 'id', 'name', 'phone', 'registeredAt', 'role', 'status'].sort(),
+        ['dni', 'email', 'id', 'name', 'phone', 'registeredAt', 'role', 'status', 'updatedAt'].sort(),
       );
       const raw = JSON.stringify(res.body).toLowerCase();
       for (const forbidden of ['password', 'hash', 'selfie', 'token', 'intentos', 'bloqueo', 'kind']) {

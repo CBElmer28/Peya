@@ -15,6 +15,7 @@ export class ProfileResponseDto {
   @ApiPropertyOptional() phone?: string;
   @ApiProperty({ enum: ['active', 'inactive'] }) status: 'active' | 'inactive';
   @ApiProperty({ description: 'Fecha de registro (YYYY-MM-DD)' }) registeredAt: string;
+  @ApiProperty({ description: 'Ultima modificacion (ISO 8601); enviar como expectedUpdatedAt al actualizar' }) updatedAt: string;
 
   static from(user: User): ProfileResponseDto {
     const dto = new ProfileResponseDto();
@@ -26,6 +27,7 @@ export class ProfileResponseDto {
     if (user.phone) dto.phone = user.phone;
     dto.status = user.status;
     dto.registeredAt = user.registeredAt;
+    dto.updatedAt = user.updatedAt;
     return dto;
   }
 }

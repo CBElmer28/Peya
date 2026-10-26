@@ -13,6 +13,7 @@ import { AdminModule } from './admin/admin.module';
 import { SentryModule, SentryGlobalFilter } from '@sentry/nestjs/setup';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { AccessControlModule } from './access-control/access-control.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { TimingInterceptor } from './common/interceptors/timing.interceptor';
 
@@ -27,6 +28,7 @@ import { TimingInterceptor } from './common/interceptors/timing.interceptor';
     SentryModule.forRoot(),
     HealthModule,
     PrismaModule,
+    AccessControlModule,
     AuthModule,
     UsersModule,
     ReniecModule,

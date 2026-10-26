@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import helmet from 'helmet';
 import { getCorsOrigins } from './common/security-config';
+import { HSTS_OPTIONS, databaseTlsWarning, httpsOnly, isHttpsEnforced } from './common/transport-security';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
@@ -15,8 +16,13 @@ async function bootstrap() {
   // Detras del proxy de Railway: IP real del cliente (rate limiting) y esquema HTTPS
   app.set('trust proxy', 1);
 
+  // Datos personales y credenciales solo por HTTPS (TLS lo termina el proxy de la plataforma)
+  app.use(httpsOnly(isHttpsEnforced()));
+  const tlsWarning = databaseTlsWarning();
+  if (tlsWarning) logger.warn(tlsWarning);
+
   // Headers de seguridad HTTP (CSP, HSTS, X-Content-Type-Options, etc.)
-  app.use(helmet());
+  app.use(helmet({ hsts: HSTS_OPTIONS }));
 
   // Prefijo global para todas las rutas API
   app.setGlobalPrefix('api');

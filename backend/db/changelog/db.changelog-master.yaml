@@ -9,3 +9,5 @@ databaseChangeLog:
       file: db/changelog/v4_seguridad_rls.yaml
   - include:
       file: db/changelog/v5_notificaciones.yaml
+  - include:
+      file: db/changelog/v6_permisos_auditoria_admin.yaml
