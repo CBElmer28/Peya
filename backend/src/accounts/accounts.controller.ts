@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AccountsService } from './accounts.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { MovementsService } from './movements.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { MovementsQueryDto, PageQueryDto } from './dto/movements-query.dto';
@@ -15,6 +16,7 @@ export class AccountsController {
   constructor(
     private readonly accountsService: AccountsService,
     private readonly movementsService: MovementsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   @Get()
@@ -43,9 +45,9 @@ export class AccountsController {
   }
 
   @Get('notifications')
-  @ApiOperation({ summary: 'Obtener las notificaciones del usuario' })
-  async getNotifications() {
-    return this.accountsService.getNotifications();
+  @ApiOperation({ summary: 'Alias de GET /notifications (se retira cuando el front migre)', deprecated: true })
+  async getNotifications(@CurrentUser() user: AuthUser, @Query() query: PageQueryDto) {
+    return this.notificationsService.list(user.id, query);
   }
 
   @Get(':id')
