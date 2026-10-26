@@ -18,6 +18,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RegisterDto, CreateUserDto, UpdateUserDto } from './dto/register.dto';
+import { ProfileResponseDto } from './dto/profile-response.dto';
+import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('Users & Registro (HU1)')
 @Controller('users')
@@ -48,6 +50,17 @@ export class UsersController {
   @ApiQuery({ name: 'email', required: true, example: 'demo@bankhub.com' })
   async checkEmail(@Query('email') email: string) {
     return this.usersService.checkEmail(email);
+  }
+
+  // Sin parametro de id: el perfil es siempre el del titular del token (HU14).
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  @ApiOperation({ summary: 'HU14 · Perfil del usuario autenticado (solo campos autorizados)' })
+  @ApiResponse({ status: 200, type: ProfileResponseDto })
+  @ApiResponse({ status: 401, description: 'Sin token, token invalido o sesion cerrada.' })
+  async me(@CurrentUser() user: AuthUser) {
+    return this.usersService.getProfile(user.id);
   }
 
   @ApiBearerAuth()

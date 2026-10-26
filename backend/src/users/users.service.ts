@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { RegisterDto, CreateUserDto, UpdateUserDto } from './dto/register.dto';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProfileResponseDto } from './dto/profile-response.dto';
 
 export interface User {
   id: string;
@@ -146,6 +147,16 @@ export class UsersService {
     if (c) return toUser(c);
     const a = await this.prisma.admin.findUnique({ where: { id } });
     return a ? adminToUser(a) : null;
+  }
+
+  /**
+   * HU14: perfil del titular del token. El id llega del JWT validado (nunca de params/query/body)
+   * y los datos se releen de la BD en cada llamada, no del payload del token.
+   */
+  async getProfile(userId: string): Promise<ProfileResponseDto> {
+    const user = await this.findById(userId);
+    if (!user || user.status !== 'active') throw new NotFoundException('Perfil no encontrado');
+    return ProfileResponseDto.from(user);
   }
 
   async findAll(): Promise<Omit<User, 'passwordHash'>[]> {
