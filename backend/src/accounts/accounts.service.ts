@@ -1,6 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { CreateAccountDto } from './dto/create-account.dto';
+import { RechargeAccountDto } from './dto/recharge-account.dto';
+import { AdminAuditService } from '../access-control/admin-audit.service';
 import { PrismaService, Tx } from '../prisma/prisma.service';
 import { businessError } from '../common/business-error';
 import { maskCci } from '../common/masking';
@@ -90,7 +93,10 @@ export const isUuid = (v: string): boolean => UUID_RE.test(v);
 
 @Injectable()
 export class AccountsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AdminAuditService,
+  ) {}
 
   /** HU06: una sola consulta (JOIN a tipo_cuenta), filtrada por el cliente autenticado. */
   async getAccounts(clienteId: string): Promise<Account[]> {
@@ -200,6 +206,130 @@ export class AccountsService {
 
   async countAccounts(): Promise<number> {
     return this.prisma.cuenta.count();
+  }
+
+  /**
+   * SCRUM-91: Recargar cuenta de usuario (simulación de depósito en cajero automático/ventanilla).
+   * Bloquea la fila de la cuenta con FOR UPDATE, valida que la cuenta y el cliente estén activos,
+   * suma el saldo, registra el movimiento contable tipo CREDITO y audita la acción.
+   */
+  async rechargeAccount(
+    actor: AuthUser,
+    accountIdOrCci: string | undefined,
+    dto: RechargeAccountDto,
+    idempotencyKey?: string,
+    ip?: string,
+  ) {
+    const target = accountIdOrCci?.trim() || dto.cci?.trim();
+    if (!target) {
+      throw businessError(400, 'ACCOUNT_TARGET_REQUIRED', 'Debes especificar el ID o el CCI de la cuenta a recargar.');
+    }
+
+    const key = idempotencyKey?.trim() ? requireIdempotencyKey(idempotencyKey) : undefined;
+    const hash = key ? hashRequest({ target, amount: dto.amount, description: dto.description }) : undefined;
+
+    return this.prisma.transaction(async (tx) => {
+
+
+      type AccountLockRow = {
+        id: string;
+        id_cliente: string;
+        moneda: string;
+        cci: string;
+        saldo: Prisma.Decimal;
+        estado_cuenta: string;
+        cliente_estado: string;
+      };
+
+      let rows: AccountLockRow[] = [];
+      if (isUuid(target)) {
+        rows = await tx.$queryRaw<AccountLockRow[]>`
+          SELECT c.id::text, c.id_cliente::text, c.moneda, c.cci, c.saldo, c.estado_cuenta, cl.estado AS cliente_estado
+          FROM cuenta c
+          JOIN cliente cl ON cl.id = c.id_cliente
+          WHERE c.id = ${target}::uuid FOR UPDATE`;
+      } else {
+        rows = await tx.$queryRaw<AccountLockRow[]>`
+          SELECT c.id::text, c.id_cliente::text, c.moneda, c.cci, c.saldo, c.estado_cuenta, cl.estado AS cliente_estado
+          FROM cuenta c
+          JOIN cliente cl ON cl.id = c.id_cliente
+          WHERE c.cci = ${target} FOR UPDATE`;
+      }
+
+      if (!rows.length) {
+        throw new NotFoundException('Cuenta no encontrada.');
+      }
+      const acc = rows[0];
+
+      let idem: any;
+      if (key && hash) {
+        idem = await beginIdempotent(tx, acc.id_cliente, 'ACCOUNT_RECHARGE', key, hash);
+        if (!('id' in idem)) return idem.replay;
+      }
+
+      if (actor.role === 'client' && acc.id_cliente !== actor.id) {
+        throw new NotFoundException('Cuenta no encontrada.');
+      }
+
+      if (acc.estado_cuenta !== 'ACTIVA') {
+        throw businessError(422, 'ACCOUNT_NOT_ACTIVE', 'La cuenta bancaria se encuentra inactiva o bloqueada.');
+      }
+      if (acc.cliente_estado !== 'ACTIVO') {
+        throw businessError(422, 'CLIENT_NOT_ACTIVE', 'El titular de la cuenta se encuentra bloqueado o inactivo.');
+      }
+
+      const prevBalance = Number(acc.saldo);
+      const newBalance = Number((prevBalance + dto.amount).toFixed(2));
+      const description = dto.description?.trim() || 'Depósito en efectivo (Cajero automático BankHub)';
+
+      await tx.$executeRaw`
+        UPDATE cuenta
+        SET saldo = saldo + ${dto.amount}::numeric, fecha_actualizacion = NOW()
+        WHERE id = ${acc.id}::uuid`;
+
+      const movRows = await tx.$queryRaw<{ id: string; fecha: Date }[]>`
+        INSERT INTO movimiento (id_cuenta, tipo, categoria, monto, saldo_posterior, descripcion, fecha)
+        VALUES (${acc.id}::uuid, 'CREDITO', 'Recarga', ${dto.amount}::numeric, ${newBalance}::numeric, ${description}, NOW())
+        RETURNING id::text AS id, fecha`;
+      const mov = movRows[0];
+
+      const result = {
+        success: true,
+        movementId: mov.id,
+        accountId: acc.id,
+        cci: acc.cci,
+        maskedCci: maskCci(acc.cci),
+        amount: formatMoney(dto.amount, acc.moneda),
+        numericAmount: dto.amount,
+        newBalance: formatMoney(newBalance, acc.moneda),
+        numericBalance: newBalance,
+        currency: acc.moneda,
+        date: mov.fecha.toISOString(),
+        description,
+      };
+
+      if (actor.role === 'admin') {
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            action: 'CUENTA_RECARGAR',
+            objectType: 'CUENTA',
+            objectId: acc.id,
+            result: 'EXITO',
+            before: { saldo: prevBalance, estado: acc.estado_cuenta },
+            after: { saldo: newBalance, recarga: dto.amount, cci: acc.cci },
+            ip,
+          },
+          tx,
+        );
+      }
+
+      if (idem?.id) {
+        await completeIdempotent(tx, idem.id, mov.id, result);
+      }
+
+      return result;
+    });
   }
 
 }

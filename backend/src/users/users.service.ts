@@ -1,6 +1,11 @@
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RegisterDto, CreateUserDto, UpdateUserDto } from './dto/register.dto';
+import { QueryUsersDto } from './dto/query-users.dto';
+import { AdminAuditService } from '../access-control/admin-audit.service';
+import { AuthUser } from '../auth/decorators/current-user.decorator';
+import { maskCci } from '../common/masking';
+import { formatMoney } from '../common/money';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProfileResponseDto } from './dto/profile-response.dto';
@@ -69,7 +74,10 @@ function prismaCode(e: unknown): string | undefined {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AdminAuditService,
+  ) {}
 
   async register(dto: RegisterDto): Promise<{ userId: string; email: string; name: string }> {
     const cleanDni = dto.dni.trim();
@@ -240,6 +248,103 @@ export class UsersService {
     return this.getProfile(userId);
   }
 
+  /** HU17 · SCRUM-71: Consulta y búsqueda de clientes con filtros y paginación */
+  async search(query: QueryUsersDto): Promise<{
+    items: (Omit<User, 'passwordHash'> & { accountsCount?: number })[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }> {
+    const page = Math.max(Number(query.page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(query.pageSize) || 20, 1), 100);
+    const skip = (page - 1) * pageSize;
+
+    const where: Prisma.clienteWhereInput = {};
+
+    if (query.status && query.status !== 'all') {
+      where.estado = query.status === 'active' ? 'ACTIVO' : 'INACTIVO';
+    }
+
+    if (query.role && query.role !== 'all') {
+      where.rol = query.role === 'admin' ? 'ADMIN' : 'CLIENTE';
+    }
+
+    if (query.q && query.q.trim()) {
+      const term = query.q.trim();
+      where.OR = [
+        { dni: { contains: term, mode: 'insensitive' } },
+        { correo: { contains: term, mode: 'insensitive' } },
+        { nombres: { contains: term, mode: 'insensitive' } },
+        { apellidos: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    const [total, rows] = await Promise.all([
+      this.prisma.cliente.count({ where }),
+      this.prisma.cliente.findMany({
+        where,
+        orderBy: { fecha_creacion: 'desc' },
+        skip,
+        take: pageSize,
+        include: {
+          cuenta: {
+            select: { id: true },
+          },
+        },
+      }),
+    ]);
+
+    const items = rows.map((r) => {
+      const { passwordHash, selfieUrl, ...safe } = toUser(r);
+      return {
+        ...safe,
+        accountsCount: r.cuenta.length,
+      };
+    });
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize) || 1,
+    };
+  }
+
+  /** HU17 · SCRUM-71: Detalle de cliente con sus cuentas bancarias asociadas */
+  async getClientDetail(id: string) {
+    if (!UUID_RE.test(id)) throw new NotFoundException('Cliente no encontrado');
+    const c = await this.prisma.cliente.findUnique({
+      where: { id },
+      include: {
+        cuenta: {
+          include: { tipo_cuenta: true },
+          orderBy: { fecha_apertura: 'asc' },
+        },
+      },
+    });
+    if (!c) throw new NotFoundException('Cliente no encontrado');
+
+    const { passwordHash, selfieUrl, ...safe } = toUser(c);
+    const accounts = c.cuenta.map((acc) => ({
+      id: acc.id,
+      cci: acc.cci,
+      maskedCci: maskCci(acc.cci),
+      currency: acc.moneda,
+      balance: formatMoney(acc.saldo, acc.moneda),
+      numericBalance: Number(acc.saldo),
+      status: acc.estado_cuenta === 'ACTIVA' ? 'active' : 'blocked',
+      type: acc.tipo_cuenta?.nombre ?? 'Cuenta',
+      openedAt: acc.fecha_apertura.toISOString(),
+    }));
+
+    return {
+      ...safe,
+      accounts,
+    };
+  }
+
   async findAll(): Promise<Omit<User, 'passwordHash'>[]> {
     const rows = await this.prisma.cliente.findMany({ orderBy: { fecha_creacion: 'asc' } });
     return rows.map(toUser).map(({ passwordHash, selfieUrl, ...user }) => user);
@@ -268,22 +373,182 @@ export class UsersService {
     }
   }
 
-  async update(id: string, dto: UpdateUserDto): Promise<Omit<User, 'passwordHash'>> {
+  /**
+   * HU17 · SCRUM-72, 73, 75: Actualización de datos del cliente con validación,
+   * protección de campos sensibles (DNI/clave/saldos) y auditoría administrativa.
+   */
+  async update(
+    id: string,
+    dto: UpdateUserDto,
+    actor?: AuthUser,
+    ip?: string,
+  ): Promise<Omit<User, 'passwordHash'>> {
     if (!UUID_RE.test(id)) throw new NotFoundException('Usuario no encontrado');
-    const data: Prisma.clienteUpdateInput = { fecha_actualizacion: new Date() };
-    if (dto.name) data.nombres = dto.name;
-    if (dto.email) data.correo = dto.email.trim().toLowerCase();
-    if (dto.role) data.rol = dto.role === 'admin' ? 'ADMIN' : 'CLIENTE';
-    if (dto.status) data.estado = dto.status === 'active' ? 'ACTIVO' : 'INACTIVO';
-    try {
-      const c = await this.prisma.transaction((tx) => tx.cliente.update({ where: { id }, data }));
-      const { passwordHash, selfieUrl, ...safe } = toUser(c);
+    return this.prisma.transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ id: string; nombres: string; correo: string; telefono: string | null; rol: string; estado: string }[]>`
+        SELECT id::text, nombres, correo, telefono, rol, estado
+        FROM cliente WHERE id = ${id}::uuid FOR UPDATE`;
+      if (!rows.length) throw new NotFoundException('Usuario no encontrado');
+
+      const cur = rows[0];
+      const data: Prisma.clienteUpdateInput = { fecha_actualizacion: new Date() };
+
+      if (dto.name && dto.name.trim()) data.nombres = dto.name.trim();
+      if (dto.phone !== undefined) {
+        data.telefono = dto.phone.replace(/\D/g, '').replace(/^51/, '');
+      }
+      if (dto.email && dto.email.trim().toLowerCase() !== cur.correo.toLowerCase()) {
+        const cleanEmail = dto.email.trim().toLowerCase();
+        const taken = await tx.$queryRaw<{ x: number }[]>`
+          SELECT 1 AS x FROM cliente WHERE lower(correo) = ${cleanEmail} AND id <> ${id}::uuid
+          UNION ALL
+          SELECT 1 FROM admin WHERE lower(correo) = ${cleanEmail} AND id <> ${id}::uuid`;
+        if (taken.length) {
+          throw new ConflictException('El correo electrónico ya está en uso por otro usuario.');
+        }
+        data.correo = cleanEmail;
+      }
+      if (dto.role) data.rol = dto.role === 'admin' ? 'ADMIN' : 'CLIENTE';
+      if (dto.status) data.estado = dto.status === 'active' ? 'ACTIVO' : 'INACTIVO';
+  
+
+      const updated = await tx.cliente.update({ where: { id }, data });
+
+      if (actor) {
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            action: 'CLIENTE_ACTUALIZAR',
+            objectType: 'CLIENTE',
+            objectId: id,
+            result: 'EXITO',
+            before: { nombres: cur.nombres, correo: cur.correo, telefono: cur.telefono, rol: cur.rol, estado: cur.estado },
+            after: {
+              nombres: updated.nombres,
+              correo: updated.correo,
+              telefono: updated.telefono,
+              rol: updated.rol,
+              estado: updated.estado,
+              motivo: dto.reason,
+            },
+            ip,
+          },
+          tx,
+        );
+      }
+
+      const { passwordHash, selfieUrl, ...safe } = toUser(updated);
       return safe;
-    } catch (e) {
-      if (prismaCode(e) === 'P2025') throw new NotFoundException('Usuario no encontrado');
-      if (prismaCode(e) === 'P2002') throw new ConflictException('El correo electrónico ya está en uso.');
-      throw e;
+    });
+  }
+
+  /**
+   * HU19 · SCRUM-84, 87, 88: Bloqueo de usuarios con concurrencia pesimista FOR UPDATE,
+   * revocación inmediata de sesiones JWT activas en la BD y auditoría administrativa.
+   */
+  async blockUser(id: string, reason?: string, actor?: AuthUser, ip?: string) {
+    if (!UUID_RE.test(id)) throw new NotFoundException('Usuario no encontrado');
+    if (actor && actor.id.toLowerCase() === id.toLowerCase()) {
+      throw businessError(403, 'SELF_PRIVILEGE_CHANGE', 'No puedes bloquear tu propia cuenta.');
     }
+
+    return this.prisma.transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ id: string; estado: string; correo: string }[]>`
+        SELECT id::text, estado, correo FROM cliente WHERE id = ${id}::uuid FOR UPDATE`;
+      if (!rows.length) throw new NotFoundException('Usuario no encontrado');
+
+      const cur = rows[0];
+      if (cur.estado === 'INACTIVO') {
+        throw businessError(409, 'USER_ALREADY_BLOCKED', 'El usuario ya se encuentra bloqueado.');
+      }
+
+      await tx.cliente.update({
+        where: { id },
+        data: { estado: 'INACTIVO', fecha_actualizacion: new Date() },
+      });
+
+      await tx.$executeRaw`
+        UPDATE sesion
+        SET estado_sesion = 'CERRADA', fecha_cierre = NOW()
+        WHERE id_cliente = ${id}::uuid AND estado_sesion = 'ACTIVA'`;
+
+      if (actor) {
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            action: 'CLIENTE_BLOQUEAR',
+            objectType: 'CLIENTE',
+            objectId: id,
+            result: 'EXITO',
+            before: { estado: cur.estado },
+            after: { estado: 'INACTIVO', motivo: reason?.trim() || 'Bloqueo administrativo' },
+            ip,
+          },
+          tx,
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Usuario bloqueado exitosamente y sesiones revocadas.',
+        userId: id,
+        status: 'inactive',
+      };
+    });
+  }
+
+  /**
+   * HU19 · SCRUM-85, 87, 88: Desbloqueo de usuarios con reset de contadores de fallo y auditoría.
+   */
+  async unblockUser(id: string, reason?: string, actor?: AuthUser, ip?: string) {
+    if (!UUID_RE.test(id)) throw new NotFoundException('Usuario no encontrado');
+    if (actor && actor.id.toLowerCase() === id.toLowerCase()) {
+      throw businessError(403, 'SELF_PRIVILEGE_CHANGE', 'No puedes modificar tu propia cuenta.');
+    }
+
+    return this.prisma.transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ id: string; estado: string; correo: string }[]>`
+        SELECT id::text, estado, correo FROM cliente WHERE id = ${id}::uuid FOR UPDATE`;
+      if (!rows.length) throw new NotFoundException('Usuario no encontrado');
+
+      const cur = rows[0];
+      if (cur.estado === 'ACTIVO') {
+        throw businessError(409, 'USER_ALREADY_ACTIVE', 'El usuario ya se encuentra activo.');
+      }
+
+      await tx.cliente.update({
+        where: { id },
+        data: {
+          estado: 'ACTIVO',
+          intentos_fallidos: 0,
+          bloqueo_hasta: null,
+          fecha_actualizacion: new Date(),
+        },
+      });
+
+      if (actor) {
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            action: 'CLIENTE_DESBLOQUEAR',
+            objectType: 'CLIENTE',
+            objectId: id,
+            result: 'EXITO',
+            before: { estado: cur.estado },
+            after: { estado: 'ACTIVO', motivo: reason?.trim() || 'Desbloqueo administrativo' },
+            ip,
+          },
+          tx,
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Usuario desbloqueado exitosamente.',
+        userId: id,
+        status: 'active',
+      };
+    });
   }
 
   async findByIdentifier(identifier: string): Promise<User | null> {

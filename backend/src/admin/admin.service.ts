@@ -4,6 +4,28 @@ import { AccountsService } from '../accounts/accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { maskCci } from '../common/masking';
 import { formatMoney } from '../common/money';
+import { Prisma } from '@prisma/client';
+import { QueryOperationsDto } from './dto/query-operations.dto';
+import { businessError } from '../common/business-error';
+
+export interface OperationItem {
+  id: string;
+  accountId: string;
+  accountCci: string;
+  accountMasked: string;
+  currency: string;
+  clientId: string;
+  clientDni: string;
+  clientName: string;
+  type: string;
+  category: string;
+  amount: string;
+  numericAmount: number;
+  balanceAfter: string;
+  numericBalanceAfter: number;
+  description: string;
+  date: string;
+}
 
 export interface AdminMetric {
   id: string;
@@ -148,5 +170,138 @@ export class AdminService {
     });
 
     return supervised;
+  }
+
+  /**
+   * HU18 · SCRUM-78 & SCRUM-79: Consulta de operaciones bancarias realizadas,
+   * consultando fuentes oficiales (movimiento, cuenta, cliente) sin alterar registros originales,
+   * con filtros avanzados (texto, tipo, fecha, monto) y paginación para altos volúmenes.
+   */
+  async getOperations(q: QueryOperationsDto): Promise<{
+    items: OperationItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }> {
+    if (q.from && q.to && q.from > q.to) {
+      throw businessError(400, 'INVALID_DATE_RANGE', 'La fecha inicial no puede ser mayor que la final.');
+    }
+    if (q.minAmount != null && q.maxAmount != null && q.minAmount > q.maxAmount) {
+      throw businessError(400, 'INVALID_AMOUNT_RANGE', 'El monto mínimo no puede ser mayor que el máximo.');
+    }
+
+    const page = Math.max(Number(q.page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(q.pageSize) || 20, 1), 100);
+    const offset = (page - 1) * pageSize;
+
+    const conds: Prisma.Sql[] = [Prisma.sql`1=1`];
+
+    if (q.type && q.type !== 'TODOS') {
+      conds.push(Prisma.sql`m.tipo = ${q.type}`);
+    }
+    if (q.from) {
+      conds.push(Prisma.sql`m.fecha >= ${q.from}::date`);
+    }
+    if (q.to) {
+      conds.push(Prisma.sql`m.fecha < (${q.to}::date + 1)`);
+    }
+    if (q.minAmount != null) {
+      conds.push(Prisma.sql`m.monto >= ${q.minAmount}::numeric`);
+    }
+    if (q.maxAmount != null) {
+      conds.push(Prisma.sql`m.monto <= ${q.maxAmount}::numeric`);
+    }
+    if (q.accountId) {
+      conds.push(Prisma.sql`m.id_cuenta = ${q.accountId}::uuid`);
+    }
+    if (q.clientId) {
+      conds.push(Prisma.sql`c.id_cliente = ${q.clientId}::uuid`);
+    }
+    if (q.q && q.q.trim()) {
+      const term = `%${q.q.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      conds.push(
+        Prisma.sql`(cl.dni ILIKE ${term} OR cl.nombres ILIKE ${term} OR cl.apellidos ILIKE ${term} OR c.cci ILIKE ${term} OR m.descripcion ILIKE ${term})`,
+      );
+    }
+
+    const whereClause = Prisma.join(conds, ' AND ');
+
+    type OpRow = {
+      id: string;
+      account_id: string;
+      cci: string;
+      moneda: string;
+      client_id: string;
+      dni: string;
+      nombres: string;
+      apellidos: string;
+      tipo: string;
+      categoria: string;
+      monto: Prisma.Decimal;
+      saldo_posterior: Prisma.Decimal;
+      descripcion: string;
+      fecha: Date;
+    };
+
+    const [countRows, rows] = await Promise.all([
+      this.prisma.$queryRaw<{ total: bigint }[]>`
+        SELECT COUNT(*)::bigint AS total
+        FROM movimiento m
+        JOIN cuenta c ON c.id = m.id_cuenta
+        JOIN cliente cl ON cl.id = c.id_cliente
+        WHERE ${whereClause}`,
+      this.prisma.$queryRaw<OpRow[]>`
+        SELECT
+          m.id::text,
+          m.id_cuenta::text AS account_id,
+          c.cci,
+          c.moneda,
+          cl.id::text AS client_id,
+          cl.dni,
+          cl.nombres,
+          cl.apellidos,
+          m.tipo,
+          m.categoria,
+          m.monto,
+          m.saldo_posterior,
+          m.descripcion,
+          m.fecha
+        FROM movimiento m
+        JOIN cuenta c ON c.id = m.id_cuenta
+        JOIN cliente cl ON cl.id = c.id_cliente
+        WHERE ${whereClause}
+        ORDER BY m.fecha DESC, m.id DESC
+        LIMIT ${pageSize} OFFSET ${offset}`,
+    ]);
+
+    const total = Number(countRows[0]?.total || 0);
+
+    const items: OperationItem[] = rows.map((r) => ({
+      id: r.id,
+      accountId: r.account_id,
+      accountCci: r.cci,
+      accountMasked: maskCci(r.cci),
+      currency: r.moneda,
+      clientId: r.client_id,
+      clientDni: r.dni,
+      clientName: [r.nombres, r.apellidos].filter(Boolean).join(' '),
+      type: r.tipo,
+      category: r.categoria,
+      amount: formatMoney(r.monto, r.moneda),
+      numericAmount: Number(r.monto),
+      balanceAfter: formatMoney(r.saldo_posterior, r.moneda),
+      numericBalanceAfter: Number(r.saldo_posterior),
+      description: r.descripcion,
+      date: r.fecha.toISOString(),
+    }));
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize) || 1,
+    };
   }
 }

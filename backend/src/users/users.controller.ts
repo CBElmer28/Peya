@@ -19,7 +19,8 @@ import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { RegisterDto, CreateUserDto, UpdateUserDto } from './dto/register.dto';
+import { RegisterDto, CreateUserDto, UpdateUserDto, ChangeStatusDto } from './dto/register.dto';
+import { QueryUsersDto } from './dto/query-users.dto';
 import { ProfileResponseDto } from './dto/profile-response.dto';
 import { PROFILE_EDITABLE_FIELDS, PROTECTED_PROFILE_FIELDS, UpdateProfileDto } from './dto/update-profile.dto';
 import { StrictBody, StrictBodyGuard } from '../common/strict-body.guard';
@@ -114,8 +115,27 @@ export class UsersController {
   @RequirePermissions(PERMISSIONS.CLIENTES_VER)
   @Get()
   @ApiOperation({ summary: 'Listar todos los clientes (Módulo Administrativo)' })
-  async findAll() {
+  async findAll(@Query() query: QueryUsersDto) {
+    if (
+      query.page !== undefined ||
+      query.pageSize !== undefined ||
+      query.q !== undefined ||
+      query.status !== undefined ||
+      query.role !== undefined
+    ) {
+      return this.usersService.search(query);
+    }
     return this.usersService.findAll();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+  @Roles('admin')
+  @RequirePermissions(PERMISSIONS.CLIENTES_VER)
+  @Get(':id')
+  @ApiOperation({ summary: 'HU17 · Obtener detalle de un cliente con sus cuentas asociadas' })
+  async findOne(@Param('id') id: string) {
+    return this.usersService.getClientDetail(id);
   }
 
   @ApiBearerAuth()
@@ -151,7 +171,41 @@ export class UsersController {
       role: dto.role !== undefined && target?.role !== dto.role,
       status: dto.status !== undefined && target?.status !== dto.status,
     });
-    return this.usersService.update(id, dto);
+    return this.usersService.update(id, dto, actor, (req as any)?.ip);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+  @UseInterceptors(AdminActionInterceptor)
+  @Roles('admin')
+  @RequirePermissions(PERMISSIONS.CLIENTES_GESTIONAR)
+  @AuditAdminAction('CLIENTE_BLOQUEAR', 'CLIENTE')
+  @Post(':id/block')
+  @ApiOperation({ summary: 'HU19 · Bloquear usuario cliente y revocar sus sesiones activas' })
+  async blockUser(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ChangeStatusDto,
+    @Req() req: any,
+  ) {
+    return this.usersService.blockUser(id, dto?.reason, actor, req?.ip);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+  @UseInterceptors(AdminActionInterceptor)
+  @Roles('admin')
+  @RequirePermissions(PERMISSIONS.CLIENTES_GESTIONAR)
+  @AuditAdminAction('CLIENTE_DESBLOQUEAR', 'CLIENTE')
+  @Post(':id/unblock')
+  @ApiOperation({ summary: 'HU19 · Desbloquear usuario cliente y rehabilitar su acceso' })
+  async unblockUser(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ChangeStatusDto,
+    @Req() req: any,
+  ) {
+    return this.usersService.unblockUser(id, dto?.reason, actor, req?.ip);
   }
 
   @ApiBearerAuth()

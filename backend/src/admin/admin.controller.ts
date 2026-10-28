@@ -1,4 +1,5 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { QueryOperationsDto } from './dto/query-operations.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -41,6 +42,15 @@ export class AdminController {
   @ApiOperation({ summary: 'Obtener lista de cuentas supervisadas' })
   @ApiResponse({ status: 200, description: 'Cuentas supervisadas devueltas.' })
   async getSupervisedAccounts() {
+    return this.adminService.getSupervisedAccounts();
+  }
+
+  @Get('operations')
+  @RequirePermissions(PERMISSIONS.CUENTAS_SUPERVISAR)
+  @ApiOperation({ summary: 'HU18 · Consultar operaciones realizadas con filtros validados y paginación' })
+  @ApiResponse({ status: 200, description: 'Operaciones devueltas exitosamente.' })
+  async getOperations(@Query() query: QueryOperationsDto) {
+    return this.adminService.getOperations(query);
     return this.adminService.getSupervisedAccounts();
   }
 }

@@ -96,6 +96,13 @@ export class AuthService {
 
     // 2. Búsqueda de usuario
     const user = await this.usersService.findByEmail(cleanEmail);
+    if (user && user.status !== 'active') {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        message: 'Tu cuenta se encuentra inactiva o bloqueada por seguridad. Contacta al soporte de BankHub.',
+        errorCode: 'ACCOUNT_BLOCKED',
+      });
+    }
 
     // 3. Verificación de contraseña
     let isMatch = false;
@@ -323,6 +330,13 @@ export class AuthService {
 
     // 2. Buscar usuario
     const user = await this.usersService.findByEmail(cleanEmail);
+    if (user && user.status !== 'active') {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        message: 'Tu cuenta se encuentra inactiva o bloqueada por seguridad. Contacta al soporte de BankHub.',
+        errorCode: 'ACCOUNT_BLOCKED',
+      });
+    }
     if (!user) {
       throw new NotFoundException('Usuario no encontrado.');
     }
