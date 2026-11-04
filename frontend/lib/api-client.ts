@@ -71,8 +71,29 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
 // ==========================================
 
 export async function getNotificationsApi(token?: string): Promise<mockApi.AppNotification[]> {
-  return fetchApi<mockApi.AppNotification[]>("/accounts/notifications", {
+  return fetchApi<mockApi.AppNotification[]>("/notifications", {
     method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
+export async function getNotificationApi(id: string, token?: string): Promise<mockApi.AppNotification> {
+  return fetchApi<mockApi.AppNotification>(`/notifications/${encodeURIComponent(id)}`, {
+    method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
+export async function markNotificationReadApi(id: string, token?: string): Promise<mockApi.AppNotification> {
+  return fetchApi<mockApi.AppNotification>(`/notifications/${encodeURIComponent(id)}/read`, {
+    method: "PATCH",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
+export async function markAllNotificationsReadApi(token?: string): Promise<{ updated: number }> {
+  return fetchApi<{ updated: number }>("/notifications/read-all", {
+    method: "PATCH",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
 }
