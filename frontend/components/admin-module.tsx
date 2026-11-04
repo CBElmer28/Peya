@@ -15,6 +15,8 @@ import {
   Loader2,
   User,
   X,
+  UserPlus,
+  ShieldOff,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
@@ -22,9 +24,15 @@ import {
   getClientsApi,
   createClientApi,
   updateClientApi,
+  updateClientStatusApi,
   deleteClientApi,
   getAdminMetricsApi,
   getSupervisedAccountsApi,
+  getAdminAccessApi,
+  getAssignableRolesApi,
+  getSubadminsApi,
+  createSubadminApi,
+  changeSubadminRolesApi,
 } from "@/lib/api-client"
 import type {
   AdminMetric,
@@ -33,8 +41,9 @@ import type {
   ClientRole,
   ClientStatus,
 } from "@/lib/mock-api"
+import type { AdminAccess, AssignableRole, SubadminView } from "@/lib/api-client"
 
-type AdminTab = "dashboard" | "clients"
+type AdminTab = "dashboard" | "clients" | "subadmins"
 
 const PAGE_SIZE = 5
 
@@ -179,18 +188,25 @@ function ClientDialog({
   open,
   mode,
   initialClient,
+  existingClients,
+  canAssignRoles,
   onClose,
   onSubmit,
 }: {
   open: boolean
   mode: ClientModalMode
+  /** Cambiar el rol de una cuenta exige gestionar administradores; sin el permiso el selector queda bloqueado. */
+  canAssignRoles: boolean
   initialClient: Client | null
+  existingClients: Client[]
   onClose: () => void
   onSubmit: (payload: ClientFormState) => Promise<void>
 }) {
   const [form, setForm] = useState<ClientFormState>(getInitialForm())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string }>({})
+  const [confirmSensitive, setConfirmSensitive] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const firstInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -198,6 +214,8 @@ function ClientDialog({
     if (!open) return
     setError(null)
     setLoading(false)
+    setFieldErrors({})
+    setConfirmSensitive(false)
     setForm(
       initialClient
         ? { name: initialClient.name, email: initialClient.email, role: initialClient.role, status: initialClient.status }
@@ -239,16 +257,7 @@ function ClientDialog({
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  async function handleSubmit() {
-    if (!form.name.trim()) {
-      setError("Ingresa el nombre completo.")
-      return
-    }
-    if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) {
-      setError("Ingresa un correo válido.")
-      return
-    }
-
+  async function saveForm() {
     setLoading(true)
     setError(null)
     try {
@@ -259,11 +268,46 @@ function ClientDialog({
         status: form.status,
       })
       onClose()
-    } catch {
-      setError(mode === "create" ? "No se pudo crear el usuario." : "No se pudo actualizar el usuario.")
+    } catch (err) {
+      console.error(mode === "create" ? "Error creando cliente:" : "Error actualizando cliente:", err)
+      setError(
+        err instanceof Error
+          ? err.message
+          : mode === "create"
+            ? "No se pudo crear el cliente. Revisa los datos e inténtalo nuevamente."
+            : "No se pudo actualizar el cliente. Revisa los datos e inténtalo nuevamente.",
+      )
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleSubmit() {
+    const name = form.name.trim()
+    const email = form.email.trim()
+    const nextErrors: { name?: string; email?: string } = {}
+    if (!name) nextErrors.name = "Ingresa el nombre completo."
+    else if (name.length < 2) nextErrors.name = "El nombre debe tener al menos 2 caracteres."
+    else if (name.length > 100) nextErrors.name = "El nombre no puede superar los 100 caracteres."
+    if (!email) nextErrors.email = "Ingresa el correo electrónico."
+    else if (email.length > 255) nextErrors.email = "El correo no puede superar los 255 caracteres."
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) nextErrors.email = "Ingresa un correo electrónico válido."
+    else if (existingClients.some((client) =>
+      client.id !== initialClient?.id && client.email.toLowerCase() === email.toLowerCase(),
+    )) {
+      nextErrors.email = "Ya existe un usuario registrado con este correo."
+    }
+    setFieldErrors(nextErrors)
+    setError(null)
+    if (Object.keys(nextErrors).length > 0) return
+
+    const sensitiveChange = mode === "edit" && initialClient !== null &&
+      (form.role !== initialClient.role || form.status !== initialClient.status)
+    if (sensitiveChange) {
+      setConfirmSensitive(true)
+      return
+    }
+    await saveForm()
   }
 
   return (
@@ -295,26 +339,71 @@ function ClientDialog({
           </button>
         </div>
 
+        {confirmSensitive ? (
+          <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4" role="alertdialog" aria-labelledby="client-sensitive-change-title">
+            <h4 id="client-sensitive-change-title" className="font-semibold text-brand-text">
+              Confirma los cambios sensibles
+            </h4>
+            <p className="mt-2 text-sm text-brand-muted">
+              {initialClient && form.role !== initialClient.role
+                ? `El rol cambiará de ${getClientRoleLabel(initialClient.role)} a ${getClientRoleLabel(form.role)}. `
+                : ""}
+              {initialClient && form.status !== initialClient.status
+                ? `El estado cambiará de ${initialClient.status === "active" ? "Activo" : "Inactivo"} a ${form.status === "active" ? "Activo" : "Inactivo"}.`
+                : ""}
+              {" "}Este cambio puede modificar el acceso del usuario.
+            </p>
+            {error ? (
+              <p role="alert" className="mt-3 rounded-xl bg-brand-negative/15 px-4 py-3 text-sm font-medium text-brand-negative">
+                {error}
+              </p>
+            ) : null}
+            <div className="mt-4 flex justify-end gap-3">
+              <button type="button" onClick={() => { setConfirmSensitive(false); setError(null) }} disabled={loading} className="btn-secondary">
+                Volver a editar
+              </button>
+              <button type="button" onClick={() => void saveForm()} disabled={loading} className="btn-primary disabled:opacity-70">
+                {loading ? "Guardando…" : "Confirmar y guardar"}
+              </button>
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="mt-5 space-y-4">
           <label className="flex flex-col gap-1.5 text-sm text-brand-muted">
             Nombre completo
             <input
               ref={firstInputRef}
               value={form.name}
-              onChange={(event) => updateField("name", event.target.value)}
+              onChange={(event) => {
+                updateField("name", event.target.value)
+                setFieldErrors((current) => ({ ...current, name: undefined }))
+              }}
+              maxLength={100}
+              aria-invalid={Boolean(fieldErrors.name)}
+              aria-describedby={fieldErrors.name ? "client-name-error" : undefined}
               className="input-base"
               placeholder="Nombre y apellido"
             />
+            {fieldErrors.name ? <span id="client-name-error" className="text-xs text-brand-negative">{fieldErrors.name}</span> : null}
           </label>
 
           <label className="flex flex-col gap-1.5 text-sm text-brand-muted">
             Correo electrónico
             <input
+              type="email"
               value={form.email}
-              onChange={(event) => updateField("email", event.target.value)}
+              onChange={(event) => {
+                updateField("email", event.target.value)
+                setFieldErrors((current) => ({ ...current, email: undefined }))
+              }}
+              maxLength={255}
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby={fieldErrors.email ? "client-email-error" : undefined}
               className="input-base"
               placeholder="usuario@peya.com"
             />
+            {fieldErrors.email ? <span id="client-email-error" className="text-xs text-brand-negative">{fieldErrors.email}</span> : null}
           </label>
 
           <div>
@@ -328,8 +417,10 @@ function ClientDialog({
                     key={role}
                     type="button"
                     onClick={() => updateField("role", role)}
+                    disabled={!canAssignRoles}
+                    aria-pressed={selected}
                     className={cn(
-                      "rounded-2xl border p-4 text-left transition-colors duration-150",
+                      "rounded-2xl border p-4 text-left transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60",
                       selected ? "border-brand-accent bg-brand-accent/10" : "border-white/10 bg-brand-surface hover:bg-white/5",
                     )}
                   >
@@ -351,6 +442,11 @@ function ClientDialog({
                 )
               })}
             </div>
+            {!canAssignRoles ? (
+              <p className="mt-2 text-xs text-brand-muted">
+                Asignar o cambiar roles requiere el permiso para gestionar administradores.
+              </p>
+            ) : null}
           </div>
 
           {mode === "edit" ? (
@@ -391,6 +487,8 @@ function ClientDialog({
             )}
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   )
@@ -399,11 +497,15 @@ function ClientDialog({
 function DeleteClientDialog({
   open,
   client,
+  loading,
+  error,
   onClose,
   onConfirm,
 }: {
   open: boolean
   client: Client | null
+  loading: boolean
+  error: string | null
   onClose: () => void
   onConfirm: () => Promise<void>
 }) {
@@ -464,19 +566,248 @@ function DeleteClientDialog({
           </div>
         ) : null}
 
+        {error ? (
+          <p role="alert" className="mt-4 rounded-xl bg-brand-negative/15 px-4 py-3 text-sm font-medium text-brand-negative">
+            {error}
+          </p>
+        ) : null}
+
         <div className="mt-6 flex items-center justify-end gap-3">
-          <button ref={firstButtonRef} type="button" onClick={onClose} className="btn-secondary">
+          <button ref={firstButtonRef} type="button" onClick={onClose} disabled={loading} className="btn-secondary disabled:opacity-60">
             Cancelar
           </button>
           <button
             type="button"
             onClick={() => void onConfirm()}
-            className="rounded-xl bg-brand-negative px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:opacity-90"
+            disabled={loading}
+            className="rounded-xl bg-brand-negative px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Sí, eliminar
+            {loading ? "Eliminando…" : "Sí, eliminar"}
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ChangeClientStatusDialog({
+  client,
+  loading,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  client: Client | null
+  loading: boolean
+  error: string | null
+  onClose: () => void
+  onConfirm: () => Promise<void>
+}) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null)
+  const nextStatus = client?.status === "active" ? "inactive" : "active"
+  const isBlocking = nextStatus === "inactive"
+
+  useEffect(() => {
+    if (!client) return
+    queueMicrotask(() => cancelButtonRef.current?.focus())
+  }, [client])
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!client) return
+      if (event.key === "Escape" && !loading) {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== "Tab") return
+
+      const focusable = getFocusableElements(dialogRef.current)
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [client, loading, onClose])
+
+  if (!client) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <button
+        type="button"
+        aria-label="Cerrar confirmación"
+        disabled={loading}
+        className="absolute inset-0 bg-black/70 disabled:cursor-wait"
+        onClick={onClose}
+      />
+      <div
+        ref={dialogRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="client-status-title"
+        aria-describedby="client-status-description"
+        className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-brand-surface2 p-5 shadow-2xl"
+      >
+        <div className="flex items-start gap-3">
+          <span
+            className={cn(
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+              isBlocking ? "bg-brand-negative/15 text-brand-negative" : "bg-brand-positive/15 text-brand-positive",
+            )}
+          >
+            {isBlocking ? <ShieldOff className="h-5 w-5" aria-hidden="true" /> : <ShieldCheck className="h-5 w-5" aria-hidden="true" />}
+          </span>
+          <div>
+            <h3 id="client-status-title" className="text-lg font-bold text-brand-text">
+              {isBlocking ? "¿Bloquear usuario?" : "¿Desbloquear usuario?"}
+            </h3>
+            <p id="client-status-description" className="mt-2 text-sm text-brand-muted">
+              {client.name} está actualmente{" "}
+              <span className="font-semibold text-brand-text">
+                {client.status === "active" ? "activo" : "inactivo"}
+              </span>
+              . {isBlocking
+                ? "Al bloquearlo, su acceso al sistema quedará desactivado."
+                : "Al desbloquearlo, podrá volver a acceder al sistema."}
+            </p>
+          </div>
+        </div>
+
+        {error ? (
+          <p role="alert" className="mt-4 rounded-xl bg-brand-negative/15 px-4 py-3 text-sm font-medium text-brand-negative">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-6 flex items-center justify-end gap-3">
+          <button
+            ref={cancelButtonRef}
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="btn-secondary disabled:opacity-60"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => void onConfirm()}
+            disabled={loading}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+              isBlocking ? "bg-brand-negative hover:opacity-90" : "bg-brand-positive hover:opacity-90",
+            )}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+            {loading ? "Actualizando…" : isBlocking ? "Confirmar bloqueo" : "Confirmar desbloqueo"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ClientDetailsDialog({
+  client,
+  onClose,
+  onEdit,
+  canEdit,
+}: {
+  client: Client | null
+  onClose: () => void
+  onEdit: (client: Client) => void
+  canEdit: boolean
+}) {
+  useEffect(() => {
+    if (!client) return
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose()
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [client, onClose])
+
+  if (!client) return null
+
+  const registeredAt = client.registeredAt
+    ? new Date(`${client.registeredAt}T00:00:00`).toLocaleDateString("es-PE", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : "No disponible"
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <button type="button" aria-label="Cerrar detalle" className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="client-details-title"
+        className="relative z-10 w-full max-w-lg rounded-2xl border border-white/10 bg-brand-surface2 p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 id="client-details-title" className="text-lg font-bold text-brand-text">Detalle del cliente</h3>
+            <p className="mt-1 text-sm text-brand-muted">Información de la cuenta seleccionada.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded-lg border border-white/10 p-2 text-brand-muted hover:bg-white/5">
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Nombre completo</dt>
+            <dd className="mt-1 break-words text-sm font-medium text-brand-text">{client.name}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Correo electrónico</dt>
+            <dd className="mt-1 break-words text-sm font-medium text-brand-text">{client.email}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Rol</dt>
+            <dd className="mt-1"><RoleBadge role={client.role} /></dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Estado</dt>
+            <dd className="mt-1">
+              <StatusBadge label={client.status === "active" ? "Activo" : "Inactivo"} tone={client.status === "active" ? "positive" : "negative"} />
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Fecha de registro</dt>
+            <dd className="mt-1 text-sm font-medium capitalize text-brand-text">{registeredAt}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-brand-muted">Identificador</dt>
+            <dd className="mt-1 break-all font-mono text-xs text-brand-light">{client.id}</dd>
+          </div>
+        </dl>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="btn-secondary">Cerrar</button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => onEdit(client)}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+              Editar cliente
+            </button>
+          ) : null}
+        </div>
+      </section>
     </div>
   )
 }
@@ -670,10 +1001,12 @@ function AdminDashboard() {
   )
 }
 
-function ClientManagement() {
+function ClientManagement({ canManage, canAssignRoles }: { canManage: boolean; canAssignRoles: boolean }) {
   const { session } = useAuth()
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
+  const [clientsLoadError, setClientsLoadError] = useState("")
+  const [clientsReloadCount, setClientsReloadCount] = useState(0)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all")
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all")
@@ -682,14 +1015,21 @@ function ClientManagement() {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState<ClientModalMode>("create")
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [detailsClient, setDetailsClient] = useState<Client | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [statusTarget, setStatusTarget] = useState<Client | null>(null)
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [operationResult, setOperationResult] = useState<{ tone: "success" | "error"; message: string } | null>(null)
   const [focusReturnTarget, setFocusReturnTarget] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
     if (!session) return
     let active = true
     setLoading(true)
+    setClientsLoadError("")
     getClientsApi(session.token)
       .then((c) => {
         if (!active) return
@@ -699,12 +1039,15 @@ function ClientManagement() {
       .catch((err) => {
         console.error("Error cargando clientes:", err)
         if (!active) return
+        setClientsLoadError(
+          err instanceof Error ? err.message : "No se pudo cargar la lista de usuarios. Intenta nuevamente.",
+        )
         setLoading(false)
       })
     return () => {
       active = false
     }
-  }, [session])
+  }, [session, clientsReloadCount])
 
   const filtered = useMemo(() => {
     const result = clients.filter((c) => {
@@ -738,6 +1081,7 @@ function ClientManagement() {
 
   function openCreateModal(trigger: HTMLElement | null) {
     setFocusReturnTarget(trigger)
+    setOperationResult(null)
     setSelectedClient(null)
     setModalMode("create")
     setModalOpen(true)
@@ -745,6 +1089,7 @@ function ClientManagement() {
 
   function openEditModal(client: Client, trigger: HTMLElement | null) {
     setFocusReturnTarget(trigger)
+    setOperationResult(null)
     setSelectedClient(client)
     setModalMode("edit")
     setModalOpen(true)
@@ -758,10 +1103,13 @@ function ClientManagement() {
 
   function openDeleteModal(client: Client, trigger: HTMLElement | null) {
     setFocusReturnTarget(trigger)
+    setDeleteError(null)
+    setOperationResult(null)
     setDeleteTarget(client)
   }
 
   function closeDeleteModal() {
+    setDeleteError(null)
     setDeleteTarget(null)
     queueMicrotask(() => focusReturnTarget?.focus())
   }
@@ -785,9 +1133,13 @@ function ClientManagement() {
         role: payload.role,
       })
       setClients((prev) => prev.map((client) => (client.id === optimisticId ? created : client)))
-    } catch {
+      setOperationResult({ tone: "success", message: `Se creó correctamente el usuario ${created.name}.` })
+    } catch (err) {
       setClients((prev) => prev.filter((client) => client.id !== optimisticId))
-      throw new Error("CREATE_FAILED")
+      console.error("Error creando cliente:", err)
+      const message = "No se pudo crear el cliente. Verifica los datos y vuelve a intentarlo."
+      setOperationResult({ tone: "error", message })
+      throw new Error(message)
     }
   }
 
@@ -799,9 +1151,13 @@ function ClientManagement() {
     try {
       const updated = await updateClientApi(session.token, previous.id, payload)
       setClients((prev) => prev.map((client) => (client.id === previous.id ? updated : client)))
-    } catch {
+      setOperationResult({ tone: "success", message: `Se actualizaron correctamente los datos de ${updated.name}.` })
+    } catch (err) {
       setClients((prev) => prev.map((client) => (client.id === previous.id ? previous : client)))
-      throw new Error("UPDATE_FAILED")
+      console.error("Error actualizando cliente:", err)
+      const message = "No se pudieron guardar los cambios. Verifica los datos y vuelve a intentarlo."
+      setOperationResult({ tone: "error", message })
+      throw new Error(message)
     }
   }
 
@@ -809,14 +1165,59 @@ function ClientManagement() {
     if (!session || !deleteTarget) return
     setDeleteLoading(true)
     const target = deleteTarget
+    setDeleteError(null)
     setClients((prev) => prev.filter((client) => client.id !== target.id))
     try {
       await deleteClientApi(session.token, target.id)
+      setOperationResult({ tone: "success", message: `Se eliminó correctamente el usuario ${target.name}.` })
       closeDeleteModal()
-    } catch {
+    } catch (err) {
       setClients((prev) => [target, ...prev])
+      console.error("Error eliminando cliente:", err)
+      const message = "No se pudo eliminar el usuario. La lista se restauró; puedes intentarlo nuevamente."
+      setDeleteError(message)
+      setOperationResult({ tone: "error", message })
     } finally {
       setDeleteLoading(false)
+    }
+  }
+
+  function openStatusDialog(client: Client) {
+    setStatusTarget(client)
+    setStatusError(null)
+    setOperationResult(null)
+  }
+
+  function closeStatusDialog() {
+    if (statusLoading) return
+    setStatusTarget(null)
+    setStatusError(null)
+  }
+
+  async function handleConfirmStatusChange() {
+    if (!session || !statusTarget || statusLoading) return
+    const target = statusTarget
+    const nextStatus: ClientStatus = target.status === "active" ? "inactive" : "active"
+    setStatusLoading(true)
+    setStatusError(null)
+    try {
+      const updated = await updateClientStatusApi(session.token, target.id, nextStatus)
+      setClients((current) => current.map((client) => (client.id === target.id ? updated : client)))
+      setDetailsClient((current) => current?.id === target.id ? updated : current)
+      setOperationResult({
+        tone: "success",
+        message: `Se ${nextStatus === "inactive" ? "bloqueó" : "desbloqueó"} correctamente el usuario ${updated.name}.`,
+      })
+      setStatusTarget(null)
+    } catch (err) {
+      console.error("Error cambiando estado del usuario:", err)
+      const message = err instanceof Error
+        ? `No se pudo ${nextStatus === "inactive" ? "bloquear" : "desbloquear"} al usuario: ${err.message}`
+        : `No se pudo ${nextStatus === "inactive" ? "bloquear" : "desbloquear"} al usuario. Intenta nuevamente.`
+      setStatusError(message)
+      setOperationResult({ tone: "error", message })
+    } finally {
+      setStatusLoading(false)
     }
   }
 
@@ -827,11 +1228,40 @@ function ClientManagement() {
           <h1 className="text-2xl font-bold text-brand-text">Gestión de usuarios</h1>
           <p className="text-sm text-brand-muted">Administra cuentas de clientes y administradores del sistema.</p>
         </div>
-        <button type="button" onClick={(event) => openCreateModal(event.currentTarget)} className="btn-primary inline-flex items-center gap-2 self-start sm:self-auto">
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          + Nuevo usuario
-        </button>
+        {canManage ? (
+          <button type="button" onClick={(event) => openCreateModal(event.currentTarget)} className="btn-primary inline-flex items-center gap-2 self-start sm:self-auto">
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            + Nuevo usuario
+          </button>
+        ) : null}
       </div>
+
+      {operationResult ? (
+        <div
+          role={operationResult.tone === "error" ? "alert" : "status"}
+          className={cn(
+            "rounded-xl border px-4 py-3 text-sm",
+            operationResult.tone === "success"
+              ? "border-brand-positive/30 bg-brand-positive/10 text-brand-positive"
+              : "border-brand-negative/30 bg-brand-negative/10 text-brand-negative",
+          )}
+        >
+          {operationResult.message}
+        </div>
+      ) : null}
+
+      {clientsLoadError ? (
+        <div role="alert" className="flex flex-col justify-between gap-3 rounded-xl border border-brand-negative/30 bg-brand-negative/10 px-4 py-3 text-sm text-brand-negative sm:flex-row sm:items-center">
+          <p>{clientsLoadError}</p>
+          <button
+            type="button"
+            onClick={() => setClientsReloadCount((count) => count + 1)}
+            className="self-start rounded-lg border border-brand-negative/30 px-3 py-1.5 text-xs font-semibold hover:bg-brand-negative/10 sm:self-auto"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : null}
 
       <div className="rounded-xl bg-brand-surface2">
         <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:justify-between">
@@ -935,20 +1365,56 @@ function ClientManagement() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          onClick={(event) => openEditModal(c, event.currentTarget)}
+                          onClick={() => setDetailsClient(c)}
+                          aria-label={`Ver detalle de ${c.name}`}
                           className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-light transition-colors hover:bg-white/10"
                         >
-                          <Pencil className="h-4 w-4" aria-hidden="true" />
-                          Editar
+                          <Eye className="h-4 w-4" aria-hidden="true" />
+                          Ver
                         </button>
-                        <button
-                          type="button"
-                          onClick={(event) => openDeleteModal(c, event.currentTarget)}
-                          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-negative transition-colors hover:bg-brand-negative/10"
-                        >
-                          <Trash2 className="h-4 w-4" aria-hidden="true" />
-                          Eliminar
-                        </button>
+                        {canManage ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(event) => openEditModal(c, event.currentTarget)}
+                              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-light transition-colors hover:bg-white/10"
+                            >
+                              <Pencil className="h-4 w-4" aria-hidden="true" />
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openStatusDialog(c)}
+                              aria-label={`${c.status === "active" ? "Bloquear" : "Desbloquear"} a ${c.name}`}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                                c.status === "active"
+                                  ? "text-brand-negative hover:bg-brand-negative/10"
+                                  : "text-brand-positive hover:bg-brand-positive/10",
+                              )}
+                            >
+                              {c.status === "active" ? (
+                                <>
+                                  <ShieldOff className="h-4 w-4" aria-hidden="true" />
+                                  Bloquear
+                              </>
+                            ) : (
+                              <>
+                                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                                Desbloquear
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => openDeleteModal(c, event.currentTarget)}
+                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-brand-negative transition-colors hover:bg-brand-negative/10"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            Eliminar
+                          </button>
+                          </>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -967,6 +1433,8 @@ function ClientManagement() {
         open={modalOpen}
         mode={modalMode}
         initialClient={selectedClient}
+        existingClients={clients}
+        canAssignRoles={canAssignRoles}
         onClose={closeModal}
         onSubmit={async (payload) => {
           if (modalMode === "create") {
@@ -980,42 +1448,514 @@ function ClientManagement() {
       <DeleteClientDialog
         open={deleteTarget !== null}
         client={deleteTarget}
+        loading={deleteLoading}
+        error={deleteError}
         onClose={closeDeleteModal}
         onConfirm={handleConfirmDelete}
+      />
+      <ChangeClientStatusDialog
+        client={statusTarget}
+        loading={statusLoading}
+        error={statusError}
+        onClose={closeStatusDialog}
+        onConfirm={handleConfirmStatusChange}
+      />
+      <ClientDetailsDialog
+        client={detailsClient}
+        canEdit={canManage}
+        onClose={() => setDetailsClient(null)}
+        onEdit={(client) => {
+          setDetailsClient(null)
+          openEditModal(client, null)
+        }}
       />
     </div>
   )
 }
 
+const ROLE_LABELS: Record<string, string> = { ADMIN: "Administrador", SOPORTE: "Soporte" }
+const PERMISSION_LABELS: Record<string, string> = {
+  METRICAS_VER: "Ver métricas",
+  CUENTAS_SUPERVISAR: "Supervisar cuentas",
+  CLIENTES_VER: "Ver clientes",
+  CLIENTES_GESTIONAR: "Gestionar clientes",
+  ADMINS_GESTIONAR: "Gestionar administradores",
+}
+const roleLabel = (name: string) => ROLE_LABELS[name] ?? name
+
+/** Traduce los codigos de error del backend; los mensajes del servidor nunca incluyen los datos enviados. */
+function describeSubadminError(err: unknown, action: string): string {
+  const body = typeof err === "object" && err !== null && "body" in err ? (err as { body?: { error?: string } }).body : undefined
+  switch (body?.error) {
+    case "EMAIL_IN_USE":
+      return "Ese correo electrónico ya está registrado."
+    case "PRIVILEGE_ESCALATION":
+      return "No puedes asignar ni modificar privilegios que tu cuenta no posee."
+    case "SELF_PRIVILEGE_CHANGE":
+      return "No puedes modificar tus propios privilegios."
+    case "ROLE_NOT_FOUND":
+      return "El rol seleccionado ya no está disponible."
+    case "UNKNOWN_FIELDS":
+      return "La solicitud incluye campos no permitidos."
+  }
+  const statusCode = typeof err === "object" && err !== null && "statusCode" in err ? (err as { statusCode?: number }).statusCode : undefined
+  if (statusCode === 403) return "No tienes permisos para realizar esta acción."
+  return err instanceof Error ? `No se pudo ${action}: ${err.message}` : `No se pudo ${action}. Inténtalo nuevamente.`
+}
+
+function SubadminManagement({ access }: { access: AdminAccess }) {
+  const { session } = useAuth()
+  const [roles, setRoles] = useState<AssignableRole[]>([])
+  const [subadmins, setSubadmins] = useState<SubadminView[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [role, setRole] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string; password?: string; role?: string }>({})
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [changingId, setChangingId] = useState<string | null>(null)
+  const [rowError, setRowError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    if (!session) {
+      setLoadError(true)
+      setLoading(false)
+      return () => {
+        active = false
+      }
+    }
+
+    setLoading(true)
+    setLoadError(false)
+    Promise.all([getAssignableRolesApi(session.token), getSubadminsApi(session.token)])
+      .then(([assignable, list]) => {
+        if (!active) return
+        setRoles(assignable)
+        setSubadmins(list)
+      })
+      .catch((error) => {
+        console.error("Error cargando subadministradores:", error instanceof Error ? error.name : "error")
+        if (active) setLoadError(true)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [session, retryCount])
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!session) return
+    const errors: typeof fieldErrors = {}
+    const cleanName = name.trim()
+    const cleanEmail = email.trim()
+    if (!cleanName) errors.name = "Ingresa el nombre completo."
+    else if (cleanName.length < 2) errors.name = "El nombre debe tener al menos 2 caracteres."
+    if (!cleanEmail) errors.email = "Ingresa el correo electrónico."
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      errors.email = "Escribe un correo válido, por ejemplo nombre@dominio.com."
+    }
+    if (!password) errors.password = "Define una contraseña inicial."
+    else if (password.length < 8 || password.length > 64 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      errors.password = "Debe tener entre 8 y 64 caracteres, con letras y números."
+    }
+    if (!role || !roles.some((option) => option.name === role)) errors.role = "Selecciona uno de los roles habilitados."
+
+    setFieldErrors(errors)
+    setNotice(null)
+    setFormError(null)
+    if (Object.keys(errors).length > 0) return
+
+    setSaving(true)
+    try {
+      const created = await createSubadminApi(session.token, {
+        name: cleanName,
+        email: cleanEmail,
+        password,
+        roles: [role],
+      })
+      setSubadmins((current) => [...current, created])
+      setName("")
+      setEmail("")
+      setPassword("")
+      setRole("")
+      setFieldErrors({})
+      setNotice("Subadministrador creado. Comparte la contraseña inicial por un canal seguro.")
+    } catch (err) {
+      console.error("Error creando subadministrador:", err instanceof Error ? err.name : "error")
+      setFormError(describeSubadminError(err, "crear el subadministrador"))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRoleChange(target: SubadminView, nextRole: string) {
+    if (!session || target.roles.length === 1 && target.roles[0] === nextRole) return
+    setChangingId(target.id)
+    setRowError(null)
+    try {
+      const updated = await changeSubadminRolesApi(session.token, target.id, [nextRole])
+      setSubadmins((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+    } catch (err) {
+      console.error("Error cambiando roles:", err instanceof Error ? err.name : "error")
+      setRowError(describeSubadminError(err, "cambiar el rol"))
+    } finally {
+      setChangingId(null)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-white/10 bg-brand-surface p-6" role="status">
+        <div className="h-24 animate-pulse rounded-lg bg-brand-surface-2" />
+        <span className="sr-only">Cargando subadministradores…</span>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
+        <p className="text-sm font-semibold text-brand-text">
+          {session ? "No pudimos cargar los subadministradores." : "Inicia sesión para gestionar subadministradores."}
+        </p>
+        {session ? (
+          <button
+            type="button"
+            onClick={() => setRetryCount((count) => count + 1)}
+            className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-brand-text hover:bg-white/5"
+          >
+            Reintentar
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+
+  const ownPermissions = new Set(access.permissions)
+
+  return (
+    <section className="space-y-6" aria-labelledby="subadmins-title">
+      <div>
+        <h2 id="subadmins-title" className="text-2xl font-bold text-brand-text">
+          Gestión de subadministradores
+        </h2>
+        <p className="mt-1 text-sm text-brand-muted">
+          Registra subadministradores y asigna únicamente roles que no superen los permisos de tu cuenta.
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate className="rounded-xl border border-white/10 bg-brand-surface p-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-accent/15 text-brand-accent">
+            <UserPlus className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h3 className="font-semibold text-brand-text">Registrar subadministrador</h3>
+            <p className="text-xs text-brand-muted">Completa sus datos y selecciona un rol permitido.</p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="subadmin-name" className="block text-sm font-medium text-brand-text">
+              Nombre completo
+            </label>
+            <input
+              id="subadmin-name"
+              autoComplete="off"
+              maxLength={100}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              aria-invalid={Boolean(fieldErrors.name)}
+              aria-describedby={fieldErrors.name ? "subadmin-name-error" : undefined}
+              className="input-base mt-1"
+              placeholder="Nombre y apellido"
+            />
+            {fieldErrors.name ? <p id="subadmin-name-error" className="mt-1 text-xs text-brand-negative">{fieldErrors.name}</p> : null}
+          </div>
+
+          <div>
+            <label htmlFor="subadmin-email" className="block text-sm font-medium text-brand-text">
+              Correo electrónico
+            </label>
+            <input
+              id="subadmin-email"
+              type="email"
+              autoComplete="off"
+              maxLength={255}
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby={fieldErrors.email ? "subadmin-email-error" : undefined}
+              className="input-base mt-1"
+              placeholder="usuario@peya.com"
+            />
+            {fieldErrors.email ? <p id="subadmin-email-error" className="mt-1 text-xs text-brand-negative">{fieldErrors.email}</p> : null}
+          </div>
+
+          <div>
+            <label htmlFor="subadmin-password" className="block text-sm font-medium text-brand-text">
+              Contraseña inicial
+            </label>
+            <input
+              id="subadmin-password"
+              type="password"
+              autoComplete="new-password"
+              maxLength={64}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              aria-invalid={Boolean(fieldErrors.password)}
+              aria-describedby="subadmin-password-help"
+              className="input-base mt-1"
+            />
+            <p
+              id="subadmin-password-help"
+              className={fieldErrors.password ? "mt-1 text-xs text-brand-negative" : "mt-1 text-xs text-brand-muted"}
+            >
+              {fieldErrors.password ?? "Entre 8 y 64 caracteres, con letras y números."}
+            </p>
+          </div>
+        </div>
+
+        <fieldset className="mt-5">
+          <legend className="text-sm font-medium text-brand-text">Rol asignado</legend>
+          {fieldErrors.role ? <p className="mt-1 text-xs text-brand-negative">{fieldErrors.role}</p> : null}
+          {roles.length === 0 ? (
+            <p className="mt-2 text-sm text-brand-muted">No hay roles disponibles para tu cuenta.</p>
+          ) : (
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              {roles.map((option) => {
+                const selected = role === option.name
+                return (
+                  <label
+                    key={option.name}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors",
+                      selected ? "border-brand-accent bg-brand-accent/10" : "border-white/10 bg-brand-bg hover:bg-white/5",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="subadmin-role"
+                      value={option.name}
+                      checked={selected}
+                      onChange={() => {
+                        setRole(option.name)
+                        setFieldErrors((current) => ({ ...current, role: undefined }))
+                      }}
+                      className="mt-1 accent-brand-accent"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-brand-text">{roleLabel(option.name)}</span>
+                      <span className="mt-1 block text-xs text-brand-muted">
+                        {option.permissions.map((p) => PERMISSION_LABELS[p] ?? p).join(" · ") || "Sin permisos"}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+        </fieldset>
+
+        {formError ? (
+          <p role="alert" className="mt-4 rounded-lg border border-brand-negative/30 bg-brand-negative/10 px-3 py-2 text-sm text-brand-negative">
+            {formError}
+          </p>
+        ) : null}
+        {notice ? (
+          <p role="status" className="mt-4 rounded-lg border border-brand-positive/30 bg-brand-positive/10 px-3 py-2 text-sm text-brand-positive">
+            {notice}
+          </p>
+        ) : null}
+
+        <div className="mt-5 flex justify-end">
+          <button type="submit" disabled={saving || roles.length === 0} className="btn-primary inline-flex items-center gap-2 disabled:opacity-70">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <UserPlus className="h-4 w-4" aria-hidden="true" />}
+            {saving ? "Registrando…" : "Registrar subadministrador"}
+          </button>
+        </div>
+      </form>
+
+      <section className="rounded-xl border border-white/10 bg-brand-surface p-5" aria-labelledby="subadmin-list-title">
+        <h3 id="subadmin-list-title" className="font-semibold text-brand-text">Administradores registrados</h3>
+        {rowError ? (
+          <p role="alert" className="mt-3 rounded-lg border border-brand-negative/30 bg-brand-negative/10 px-3 py-2 text-sm text-brand-negative">
+            {rowError}
+          </p>
+        ) : null}
+        {subadmins.length === 0 ? (
+          <p className="mt-3 text-sm text-brand-muted">Aún no hay administradores registrados.</p>
+        ) : (
+          <ul className="mt-4 divide-y divide-white/10">
+            {subadmins.map((item) => {
+              const isSelf = item.email.toLowerCase() === session?.user.email.toLowerCase()
+              // El servidor decide; aqui solo se evita ofrecer acciones que seguro rechazara.
+              const exceedsOwn = item.permissions.some((p) => !ownPermissions.has(p))
+              const locked = isSelf || exceedsOwn
+              return (
+                <li key={item.id} className="flex flex-col gap-3 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="font-medium text-brand-text">
+                      {item.name}
+                      {isSelf ? <span className="ml-2 text-xs text-brand-muted">(tú)</span> : null}
+                    </p>
+                    <p className="break-words text-sm text-brand-muted">{item.email}</p>
+                    <p className="mt-1 text-xs text-brand-muted">
+                      {item.permissions.map((p) => PERMISSION_LABELS[p] ?? p).join(" · ") || "Sin permisos"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label htmlFor={`role-${item.id}`} className="sr-only">
+                      Rol de {item.name}
+                    </label>
+                    <select
+                      id={`role-${item.id}`}
+                      value={item.roles[0] ?? ""}
+                      disabled={locked || changingId === item.id}
+                      onChange={(event) => void handleRoleChange(item, event.target.value)}
+                      title={isSelf ? "No puedes modificar tus propios privilegios" : exceedsOwn ? "Tiene permisos que tu cuenta no posee" : undefined}
+                      className="input-base w-44 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {!roles.some((option) => option.name === item.roles[0]) && item.roles[0] ? (
+                        <option value={item.roles[0]}>{roleLabel(item.roles[0])}</option>
+                      ) : null}
+                      {roles.map((option) => (
+                        <option key={option.name} value={option.name}>
+                          {roleLabel(option.name)}
+                        </option>
+                      ))}
+                    </select>
+                    {changingId === item.id ? <Loader2 className="h-4 w-4 animate-spin text-brand-muted" aria-hidden="true" /> : null}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+    </section>
+  )
+}
+
 export function AdminModule() {
-  const [tab, setTab] = useState<AdminTab>("dashboard")
+  const { session } = useAuth()
+  const [tab, setTab] = useState<AdminTab | null>(null)
+  const [access, setAccess] = useState<AdminAccess | null>(null)
+  const [accessLoading, setAccessLoading] = useState(true)
+  const [accessError, setAccessError] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+
+  // Los permisos vienen del servidor (fuente de verdad); la interfaz solo ofrece lo que el servidor aceptaria.
+  useEffect(() => {
+    let active = true
+    if (!session) {
+      setAccess(null)
+      setAccessError(true)
+      setAccessLoading(false)
+      return () => {
+        active = false
+      }
+    }
+    setAccessLoading(true)
+    setAccessError(false)
+    getAdminAccessApi(session.token)
+      .then((data) => {
+        if (active) setAccess(data)
+      })
+      .catch((error) => {
+        console.error("Error verificando permisos administrativos:", error instanceof Error ? error.name : "error")
+        if (active) setAccessError(true)
+      })
+      .finally(() => {
+        if (active) setAccessLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [session, retryCount])
+
+  if (accessLoading) {
+    return (
+      <div className="rounded-xl border border-white/10 bg-brand-surface p-6" role="status">
+        <div className="h-24 animate-pulse rounded-lg bg-brand-surface-2" />
+        <span className="sr-only">Verificando permisos de administrador…</span>
+      </div>
+    )
+  }
+
+  if (accessError || !access) {
+    return (
+      <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
+        <p className="text-sm font-semibold text-brand-text">No pudimos verificar tus permisos.</p>
+        {session ? (
+          <button
+            type="button"
+            onClick={() => setRetryCount((count) => count + 1)}
+            className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-brand-text hover:bg-white/5"
+          >
+            Reintentar
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+
+  const has = (permission: string) => access.permissions.includes(permission)
+  const tabs: { key: AdminTab; label: string }[] = [
+    // El panel consulta metricas y cuentas supervisadas: necesita ambos permisos.
+    ...(has("METRICAS_VER") && has("CUENTAS_SUPERVISAR") ? [{ key: "dashboard" as const, label: "Panel administrativo" }] : []),
+    ...(has("CLIENTES_VER") ? [{ key: "clients" as const, label: "Gestión de usuarios" }] : []),
+    ...(has("ADMINS_GESTIONAR") ? [{ key: "subadmins" as const, label: "Subadministradores" }] : []),
+  ]
+
+  if (tabs.length === 0) {
+    return (
+      <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5" role="alert">
+        <h2 className="font-semibold text-brand-text">Acceso restringido</h2>
+        <p className="mt-1 text-sm text-brand-muted">Tu cuenta no tiene permisos para ninguna sección de administración.</p>
+      </div>
+    )
+  }
+
+  const activeTab = tab && tabs.some((item) => item.key === tab) ? tab : tabs[0].key
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2 rounded-xl bg-brand-surface p-1.5">
-        <button
-          type="button"
-          onClick={() => setTab("dashboard")}
-          className={cn(
-            "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-            tab === "dashboard" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
-          )}
-        >
-          Panel administrativo
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("clients")}
-          className={cn(
-            "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-            tab === "clients" ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
-          )}
-        >
-          Gestión de usuarios
-        </button>
+      <div className="flex flex-col gap-1.5 rounded-xl bg-brand-surface p-1.5 sm:flex-row">
+        {tabs.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setTab(item.key)}
+            aria-current={activeTab === item.key ? "page" : undefined}
+            className={cn(
+              "flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
+              activeTab === item.key ? "bg-brand-accent text-brand-bg" : "text-brand-muted hover:text-brand-text",
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
 
-      {tab === "dashboard" ? <AdminDashboard /> : <ClientManagement />}
+      {activeTab === "dashboard" ? (
+        <AdminDashboard />
+      ) : activeTab === "clients" ? (
+        <ClientManagement canManage={has("CLIENTES_GESTIONAR")} canAssignRoles={has("ADMINS_GESTIONAR")} />
+      ) : (
+        <SubadminManagement access={access} />
+      )}
     </div>
   )
 }

@@ -23,7 +23,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
-import { createAccountApi, getAccountsApi } from "@/lib/api-client"
+import { createAccountApi, getAccountDetailApi, getAccountsApi } from "@/lib/api-client"
 import { AccountDetailModal } from "@/components/account-detail-modal"
 import type { Account } from "@/lib/mock-api"
 

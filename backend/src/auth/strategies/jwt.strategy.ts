@@ -31,6 +31,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     // 2. Validar que el usuario exista y esté activo
     const user = await this.usersService.findById(payload.sub);
+    if (user && user.role === 'client' && user.status !== 'active') {
+      throw new UnauthorizedException('Tu cuenta ha sido bloqueada o desactivada. Contacta al soporte.');
+    }
     if (!user) {
       throw new UnauthorizedException('Token inválido o usuario no encontrado.');
     }

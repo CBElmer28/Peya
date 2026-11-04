@@ -1,0 +1,85 @@
+databaseChangeLog:
+  - changeSet:
+      id: v6-permisos-auditoria-admin
+      author: backend_sprint3
+      changes:
+        - sql:
+            dbms: postgresql
+            splitStatements: true
+            endDelimiter: ;;
+            sql: |
+              -- HU16: roles y permisos. rol y admin_rol ya existen (v3); se agrega el catalogo de
+              -- permisos y la relacion N:M rol_permiso. El permiso efectivo de un admin es la union
+              -- de los permisos de sus roles ACTIVOS.
+              CREATE TABLE permiso (
+                id SMALLINT PRIMARY KEY,
+                codigo VARCHAR(40) NOT NULL UNIQUE CHECK (codigo ~ '^[A-Z_]+$'),
+                descripcion VARCHAR(255)
+              );;
+              INSERT INTO permiso (id, codigo, descripcion) VALUES
+                (1, 'METRICAS_VER',        'Ver las metricas del panel administrativo'),
+                (2, 'CUENTAS_SUPERVISAR',  'Ver las cuentas supervisadas'),
+                (3, 'CLIENTES_VER',        'Listar clientes'),
+                (4, 'CLIENTES_GESTIONAR',  'Crear, modificar y eliminar clientes'),
+                (5, 'ADMINS_GESTIONAR',    'Crear subadministradores y asignar roles');;
+
+              CREATE TABLE rol_permiso (
+                id_rol SMALLINT NOT NULL REFERENCES rol(id) ON DELETE CASCADE,
+                id_permiso SMALLINT NOT NULL REFERENCES permiso(id),
+                PRIMARY KEY (id_rol, id_permiso)
+              );;
+              CREATE INDEX ix_rol_permiso_permiso ON rol_permiso (id_permiso);;
+              INSERT INTO rol_permiso (id_rol, id_permiso)
+                SELECT 1, id FROM permiso;;
+              INSERT INTO rol_permiso (id_rol, id_permiso) VALUES (2, 1), (2, 2), (2, 3);;
+
+              -- Trazabilidad de quien creo a cada administrador.
+              ALTER TABLE admin ADD COLUMN id_creador UUID REFERENCES admin(id);;
+
+              -- Auditoria de acciones administrativas: actor, accion, fecha, resultado y objeto afectado.
+              -- Los valores anterior/posterior son JSON de negocio (p. ej. roles); nunca credenciales.
+              CREATE TABLE auditoria_admin (
+                id BIGSERIAL PRIMARY KEY,
+                id_actor UUID NOT NULL,
+                accion VARCHAR(40) NOT NULL,
+                objeto_tipo VARCHAR(30) NOT NULL,
+                objeto_id VARCHAR(64),
+                resultado VARCHAR(10) NOT NULL CHECK (resultado IN ('EXITO', 'DENEGADO', 'ERROR')),
+                valor_anterior JSONB,
+                valor_nuevo JSONB,
+                ip_origen VARCHAR(45),
+                fecha TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+              );;
+              CREATE INDEX ix_auditoria_admin_fecha ON auditoria_admin (fecha DESC);;
+              CREATE INDEX ix_auditoria_admin_actor ON auditoria_admin (id_actor, fecha DESC);;
+              CREATE INDEX ix_auditoria_admin_objeto ON auditoria_admin (objeto_tipo, objeto_id);;
+
+              -- Bitacora inmutable: solo se agrega.
+              CREATE OR REPLACE FUNCTION bloquear_modificacion_auditoria()
+              RETURNS TRIGGER AS $$
+              BEGIN
+                RAISE EXCEPTION 'auditoria_admin es de solo insercion';
+              END;
+              $$ LANGUAGE plpgsql;;
+              CREATE TRIGGER t_auditoria_admin_inmutable
+                BEFORE UPDATE OR DELETE ON auditoria_admin
+                FOR EACH ROW EXECUTE FUNCTION bloquear_modificacion_auditoria();;
+
+              ALTER TABLE permiso ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE rol_permiso ENABLE ROW LEVEL SECURITY;;
+              ALTER TABLE auditoria_admin ENABLE ROW LEVEL SECURITY;;
+              DO $$
+              BEGIN
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+                  REVOKE ALL ON permiso, rol_permiso, auditoria_admin FROM anon;
+                END IF;
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+                  REVOKE ALL ON permiso, rol_permiso, auditoria_admin FROM authenticated;
+                END IF;
+              END $$;;
+      rollback:
+        - sql:
+            sql: |
+              DROP TABLE IF EXISTS auditoria_admin, rol_permiso, permiso CASCADE;
+              ALTER TABLE admin DROP COLUMN IF EXISTS id_creador;
+              DROP FUNCTION IF EXISTS bloquear_modificacion_auditoria();

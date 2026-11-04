@@ -37,6 +37,11 @@ export type AppNotification = {
   detail: string
   unread: boolean
   type: "transfer" | "login" | "document" | "payment" | "alert" | "deposit"
+  transferOrigin?: string
+  amount?: string
+  currency?: "PEN" | "USD"
+  date?: string
+  receivingAccount?: string
 }
 
 export type DniData = {
@@ -135,7 +140,7 @@ function generateCci(): string {
 
 export type Session = {
   token: string
-  user: { name: string; email: string }
+  user: { name: string; email: string; role?: "client" | "admin" }
 }
 
 const NETWORK_DELAY = 700
@@ -508,7 +513,17 @@ export async function getNotifications(token: string): Promise<AppNotification[]
   void token
 
   return delay<AppNotification[]>([
-    { id: "not-1", title: "Pago recibido de Cliente ACME", detail: "Hace 10 min", unread: true, type: "payment" },
+    {
+      id: "not-1",
+      title: "Transferencia recibida de Cliente ACME",
+      detail: "Transferencia recibida",
+      unread: true,
+      type: "transfer",
+      transferOrigin: "Cliente ACME · Cuenta **** 4821",
+      amount: "1250.00",
+      currency: "PEN",
+      date: "2026-08-30T10:20:00-05:00",
+    },
     { id: "not-2", title: "Recordatorio: factura por vencer", detail: "Hace 1 hora", unread: false, type: "alert" },
     { id: "not-3", title: "Nuevo dispositivo inició sesión", detail: "Hace 3 horas", unread: true, type: "login" },
     { id: "not-4", title: "Tu reporte mensual está listo", detail: "Ayer", unread: false, type: "document" },
@@ -1102,4 +1117,3 @@ export async function createThirdPartyTransfer(
     newBalance: currentNum - payload.amount,
   })
 }
-

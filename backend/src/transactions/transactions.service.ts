@@ -190,6 +190,15 @@ export class TransactionsService {
 
       await tx.$executeRaw`UPDATE transferencia_externa SET estado = 'COMPLETADO' WHERE id = ${t.id}::uuid`;
 
+      // HU13: notifica al receptor dentro de la misma transaccion. El UNIQUE (cliente, transferencia)
+      // hace inofensivo cualquier reintento del procesamiento.
+      await tx.$executeRaw`
+        INSERT INTO notificacion (id_cliente, titulo, detalle, id_transferencia_externa, id_cuenta_destino)
+        SELECT ${dst.id_cliente}::uuid, 'Transferencia recibida de ' || trim(c.nombres || ' ' || c.apellidos),
+               'Transferencia recibida', ${t.id}::uuid, ${dst.id}::uuid
+        FROM cliente c WHERE c.id = ${user.id}::uuid
+        ON CONFLICT (id_cliente, id_transferencia_externa) DO NOTHING`;
+
       const result: TransferResult = {
         status: 'success',
         transferId: t.id,

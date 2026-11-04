@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: v5-notificaciones
+      author: backend_sprint3
+      changes:
+        - sql:
+            dbms: postgresql
+            splitStatements: true
+            endDelimiter: ;;
+            sql: |
+              -- HU13: notificacion de transferencia recibida. Los datos de la operacion (monto, moneda,
+              -- fecha, origen) no se copian: se leen de transferencia_externa para tener una sola fuente.
+              CREATE TABLE notificacion (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id_cliente UUID NOT NULL REFERENCES cliente(id),
+                tipo VARCHAR(20) NOT NULL DEFAULT 'TRANSFERENCIA' CHECK (tipo IN ('TRANSFERENCIA')),
+                titulo VARCHAR(200) NOT NULL,
+                detalle VARCHAR(200) NOT NULL,
+                leida BOOLEAN NOT NULL DEFAULT FALSE,
+                id_transferencia_externa UUID NOT NULL REFERENCES transferencia_externa(id),
+                id_cuenta_destino UUID NOT NULL REFERENCES cuenta(id),
+                fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT ux_notificacion_transferencia UNIQUE (id_cliente, id_transferencia_externa)
+              );;
+              CREATE INDEX ix_notificacion_cliente_fecha ON notificacion (id_cliente, fecha_creacion DESC, id DESC);;
+              ALTER TABLE notificacion ENABLE ROW LEVEL SECURITY;;
+              DO $$
+              BEGIN
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+                  REVOKE ALL ON notificacion FROM anon;
+                END IF;
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+                  REVOKE ALL ON notificacion FROM authenticated;
+                END IF;
+              END $$;;
+      rollback:
+        - sql:
+            sql: DROP TABLE notificacion;
