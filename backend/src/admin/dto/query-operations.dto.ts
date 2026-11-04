@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
 
 export class QueryOperationsDto {
   @ApiPropertyOptional({
@@ -9,6 +9,7 @@ export class QueryOperationsDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   q?: string;
 
   @ApiPropertyOptional({
@@ -52,12 +53,12 @@ export class QueryOperationsDto {
 
   @ApiPropertyOptional({ description: 'Filtrar por ID de cuenta específica' })
   @IsOptional()
-  @IsString()
+  @IsUUID()
   accountId?: string;
 
   @ApiPropertyOptional({ description: 'Filtrar por ID de cliente específico' })
   @IsOptional()
-  @IsString()
+  @IsUUID()
   clientId?: string;
 
   @ApiPropertyOptional({ description: 'Número de página', default: 1, example: 1 })

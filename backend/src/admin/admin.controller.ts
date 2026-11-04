@@ -1,5 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { QueryOperationsDto } from './dto/query-operations.dto';
+import { Controller, Get, Query, UseGuards, UseInterceptors } from '@nestjs/common';import { QueryOperationsDto } from './dto/query-operations.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -8,11 +7,13 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { PermissionsGuard, RequirePermissions } from '../access-control/permissions.guard';
 import { PERMISSIONS } from '../access-control/permissions';
 import { PermissionsService } from '../access-control/permissions.service';
+import { AdminActionInterceptor, AuditAdminAction } from '../access-control/admin-action.interceptor';
 import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('Módulo Administrativo (Admin-Service)')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseInterceptors(AdminActionInterceptor)
 @Roles('admin')
 @Controller('admin')
 export class AdminController {
@@ -47,6 +48,7 @@ export class AdminController {
 
   @Get('operations')
   @RequirePermissions(PERMISSIONS.CUENTAS_SUPERVISAR)
+  @AuditAdminAction('OPERACIONES_CONSULTAR', 'OPERACION')
   @ApiOperation({ summary: 'HU18 · Consultar operaciones realizadas con filtros validados y paginación' })
   @ApiResponse({ status: 200, description: 'Operaciones devueltas exitosamente.' })
   async getOperations(@Query() query: QueryOperationsDto) {

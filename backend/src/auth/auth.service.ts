@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
@@ -151,6 +151,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      jti: randomUUID(), // identificador único: dos logins en el mismo segundo ya no generan el mismo token
     };
 
     const expiresIn = dto.rememberMe ? '30d' : '24h';

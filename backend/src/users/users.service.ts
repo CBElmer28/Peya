@@ -414,6 +414,13 @@ export class UsersService {
 
       const updated = await tx.cliente.update({ where: { id }, data });
 
+      if (cur.estado === 'ACTIVO' && updated.estado === 'INACTIVO') {
+        await tx.$executeRaw`
+          UPDATE sesion
+          SET estado_sesion = 'CERRADA', fecha_cierre = NOW()
+          WHERE id_cliente = ${id}::uuid AND estado_sesion = 'ACTIVA'`;
+      }
+
       if (actor) {
         await this.audit.record(
           {

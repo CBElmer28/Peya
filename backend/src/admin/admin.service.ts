@@ -244,14 +244,15 @@ export class AdminService {
       fecha: Date;
     };
 
-    const [countRows, rows] = await Promise.all([
-      this.prisma.$queryRaw<{ total: bigint }[]>`
+    const [countRows, rows] = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+      const count = await tx.$queryRaw<{ total: bigint }[]>`
         SELECT COUNT(*)::bigint AS total
         FROM movimiento m
         JOIN cuenta c ON c.id = m.id_cuenta
         JOIN cliente cl ON cl.id = c.id_cliente
-        WHERE ${whereClause}`,
-      this.prisma.$queryRaw<OpRow[]>`
+        WHERE ${whereClause}`;
+      const data = await tx.$queryRaw<OpRow[]>`
         SELECT
           m.id::text,
           m.id_cuenta::text AS account_id,
@@ -272,8 +273,9 @@ export class AdminService {
         JOIN cliente cl ON cl.id = c.id_cliente
         WHERE ${whereClause}
         ORDER BY m.fecha DESC, m.id DESC
-        LIMIT ${pageSize} OFFSET ${offset}`,
-    ]);
+        LIMIT ${pageSize} OFFSET ${offset}`;
+      return [count, data] as const;
+    });
 
     const total = Number(countRows[0]?.total || 0);
 
