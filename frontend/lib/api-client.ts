@@ -536,3 +536,89 @@ export async function getSupervisedAccountsApi(token?: string): Promise<mockApi.
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
 }
+
+// ==========================================
+// RECARGAS (SCRUM-91)
+// ==========================================
+
+export interface RechargeResult {
+  success: boolean
+  movementId: string
+  accountId: string
+  cci: string
+  maskedCci: string
+  amount: string
+  numericAmount: number
+  newBalance: string
+  numericBalance: number
+  currency: "PEN" | "USD"
+  date: string
+  description: string
+}
+
+export async function rechargeAccountApi(
+  token: string,
+  payload: { cci: string; amount: number; description?: string },
+  idempotencyKey: string,
+): Promise<RechargeResult> {
+  return fetchApi<RechargeResult>("/accounts/recharge", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(payload),
+  })
+}
+
+// ==========================================
+// CONSULTA DE OPERACIONES (HU18)
+// ==========================================
+
+export interface OperationItem {
+  id: string
+  accountId: string
+  accountCci: string
+  accountMasked: string
+  currency: string
+  clientId: string
+  clientDni: string
+  clientName: string
+  type: "CREDITO" | "DEBITO" | string
+  category: string
+  amount: string
+  numericAmount: number
+  balanceAfter: string
+  numericBalanceAfter: number
+  description: string
+  date: string
+}
+
+export interface OperationsPage {
+  items: OperationItem[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface OperationsFilters {
+  q?: string
+  type?: "TODOS" | "CREDITO" | "DEBITO"
+  from?: string
+  to?: string
+  minAmount?: string
+  maxAmount?: string
+  page?: number
+  pageSize?: number
+}
+
+export async function getOperationsApi(token: string, filters: OperationsFilters): Promise<OperationsPage> {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === undefined || value === "" || value === "TODOS") continue
+    params.set(key, String(value))
+  }
+  const qs = params.toString()
+  return fetchApi<OperationsPage>(`/admin/operations${qs ? `?${qs}` : ""}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
