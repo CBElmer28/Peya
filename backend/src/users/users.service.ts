@@ -7,6 +7,7 @@ import { AuthUser } from '../auth/decorators/current-user.decorator';
 import { maskCci } from '../common/masking';
 import { formatMoney } from '../common/money';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProfileResponseDto } from './dto/profile-response.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -351,7 +352,8 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto): Promise<Omit<User, 'passwordHash'>> {
-    const passwordHash = await bcrypt.hash('123456', 8);
+    // Clave aleatoria no revelada: el titular define la suya con el flujo de recuperacion de contrasena.
+    const passwordHash = await bcrypt.hash(randomBytes(24).toString('base64url'), 10);
     const dni = Math.floor(10000000 + Math.random() * 90000000).toString();
     try {
       const c = await this.prisma.transaction((tx) =>
