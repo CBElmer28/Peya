@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { AlertCircle, CheckCircle2, RefreshCw, Wallet } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { getAccountDetailApi, getAccountsApi } from "@/lib/api-client"
+import { getAccountDetailApi, getAccountsApi, rechargeAccountApi, type RechargeResult } from "@/lib/api-client"
 import type { Account } from "@/lib/mock-api"
 
 type AccountWithCci = Account & { fullCci: string }
@@ -23,6 +23,8 @@ export function RechargeView() {
   const [formError, setFormError] = useState<string | null>(null)
   const [previewAccount, setPreviewAccount] = useState<AccountWithCci | null>(null)
   const [previewAmount, setPreviewAmount] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<RechargeResult | null>(null)
 
   useEffect(() => {
     let active = true
@@ -73,10 +75,12 @@ export function RechargeView() {
     return accounts.find((account) => normalizeCci(account.fullCci) === normalizedCci) ?? null
   }, [accounts, cci])
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (submitting) return
     setFormError(null)
     setPreviewAccount(null)
+    setResult(null)
 
     const normalizedCci = normalizeCci(cci)
     if (!normalizedCci) {
@@ -94,13 +98,39 @@ export function RechargeView() {
       return
     }
     const parsedAmount = Number(normalizedAmount)
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setFormError("El monto debe ser mayor que cero.")
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 1) {
+      setFormError("El monto mínimo de recarga es 1.00.")
+      return
+    }
+    if (parsedAmount > 20000) {
+      setFormError("El monto máximo permitido por recarga es 20,000.00.")
+      return
+    }
+    if (!session) {
+      setFormError("Inicia sesión para recargar tu cuenta.")
       return
     }
 
-    setPreviewAccount(matchingAccount)
-    setPreviewAmount(parsedAmount)
+    setSubmitting(true)
+    try {
+      const idempotencyKey = `rc-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      const recharge = await rechargeAccountApi(
+        session.token,
+        { cci: matchingAccount.fullCci, amount: parsedAmount },
+        idempotencyKey,
+      )
+      setPreviewAccount(matchingAccount)
+      setPreviewAmount(parsedAmount)
+      setResult(recharge)
+      setAmount("")
+    } catch (err) {
+      console.error("Error al recargar la cuenta:", err instanceof Error ? err.name : "error")
+      setFormError(
+        err instanceof Error && err.message ? err.message : "No pudimos completar la recarga. Inténtalo nuevamente.",
+      )
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -113,8 +143,8 @@ export function RechargeView() {
       </div>
 
       <div className="rounded-xl border border-brand-accent/20 bg-brand-accent/10 p-4 text-sm text-brand-light">
-        Esta vista es una demostración: el sistema todavía no ofrece una operación de recarga. No se modificará el saldo
-        ni se enviará dinero.
+        La recarga simula un depósito en cajero: acredita saldo en tu cuenta sin mover dinero real. El monto debe estar
+        entre 1.00 y 20,000.00.
       </div>
 
       {loading ? (
@@ -160,6 +190,7 @@ export function RechargeView() {
                 setCci(event.target.value)
                 setFormError(null)
                 setPreviewAccount(null)
+                setResult(null)
               }}
               placeholder="Escribe el CCI completo"
               aria-invalid={Boolean(formError)}
@@ -196,6 +227,7 @@ export function RechargeView() {
                   setAmount(event.target.value)
                   setFormError(null)
                   setPreviewAccount(null)
+                  setResult(null)
                 }}
                 placeholder="0.00"
                 aria-invalid={Boolean(formError)}
@@ -212,21 +244,21 @@ export function RechargeView() {
             </p>
           ) : null}
 
-          <button type="submit" className="btn-primary w-full sm:w-auto">
-            Revisar recarga
+          <button type="submit" disabled={submitting} className="btn-primary w-full sm:w-auto">
+            {submitting ? "Recargando…" : "Recargar"}
           </button>
         </form>
       )}
 
-      {previewAccount ? (
+      {previewAccount && result ? (
         <section className="rounded-xl border border-white/10 bg-brand-surface p-5" aria-labelledby="recharge-preview-title">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-positive/15 text-brand-positive">
               <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
             </span>
             <div>
-              <h2 id="recharge-preview-title" className="font-semibold text-brand-text">Resumen de demostración</h2>
-              <p className="text-xs text-brand-muted">No es una confirmación de pago ni un cambio de saldo.</p>
+              <h2 id="recharge-preview-title" className="font-semibold text-brand-text">Recarga realizada</h2>
+              <p className="text-xs text-brand-muted">El saldo de tu cuenta ya fue actualizado.</p>
             </div>
           </div>
           <dl className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -239,13 +271,17 @@ export function RechargeView() {
               <dd className="mt-1 break-all font-mono text-sm text-brand-text">{previewAccount.fullCci}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-brand-muted">Monto solicitado</dt>
+              <dt className="text-xs font-medium text-brand-muted">Monto recargado</dt>
               <dd className="mt-1 text-lg font-bold text-brand-text">
                 {new Intl.NumberFormat("es-PE", {
                   style: "currency",
                   currency: previewAccount.currency,
                 }).format(previewAmount)}
               </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-brand-muted">Nuevo saldo</dt>
+              <dd className="mt-1 text-lg font-bold text-brand-positive">{result.newBalance}</dd>
             </div>
           </dl>
         </section>

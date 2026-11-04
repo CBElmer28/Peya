@@ -108,10 +108,6 @@ export class AuthService {
     let isMatch = false;
     if (user) {
       isMatch = await bcrypt.compare(dto.password, user.passwordHash);
-      // Fallback demo password
-      if (!isMatch && dto.password === '123456') {
-        isMatch = true;
-      }
     }
 
     if (!user || !isMatch) {
