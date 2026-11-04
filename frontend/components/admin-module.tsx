@@ -20,6 +20,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
+import { AdminOperations } from "@/components/admin-operations"
 import {
   getClientsApi,
   createClientApi,
@@ -43,7 +44,7 @@ import type {
 } from "@/lib/mock-api"
 import type { AdminAccess, AssignableRole, SubadminView } from "@/lib/api-client"
 
-type AdminTab = "dashboard" | "clients" | "subadmins"
+type AdminTab = "dashboard" | "clients" | "operations" | "subadmins"
 
 const PAGE_SIZE = 5
 
@@ -1916,6 +1917,7 @@ export function AdminModule() {
     // El panel consulta metricas y cuentas supervisadas: necesita ambos permisos.
     ...(has("METRICAS_VER") && has("CUENTAS_SUPERVISAR") ? [{ key: "dashboard" as const, label: "Panel administrativo" }] : []),
     ...(has("CLIENTES_VER") ? [{ key: "clients" as const, label: "Gestión de usuarios" }] : []),
+    ...(has("CUENTAS_SUPERVISAR") ? [{ key: "operations" as const, label: "Operaciones" }] : []),
     ...(has("ADMINS_GESTIONAR") ? [{ key: "subadmins" as const, label: "Subadministradores" }] : []),
   ]
 
@@ -1953,6 +1955,8 @@ export function AdminModule() {
         <AdminDashboard />
       ) : activeTab === "clients" ? (
         <ClientManagement canManage={has("CLIENTES_GESTIONAR")} canAssignRoles={has("ADMINS_GESTIONAR")} />
+      ) : activeTab === "operations" ? (
+        <AdminOperations />
       ) : (
         <SubadminManagement access={access} />
       )}
