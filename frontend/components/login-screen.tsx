@@ -39,7 +39,7 @@ export function LoginScreen() {
   }
 
   return (
-    <main className="flex min-h-screen bg-brand-bg text-brand-text">
+    <main className="flex min-h-screen bg-white text-slate-900">
       <div className="flex w-full flex-col justify-center px-6 py-12 md:w-1/2 md:px-12 lg:px-20">
         <div className="mx-auto w-full max-w-md">
           <div className="mb-8 flex items-center gap-2">
@@ -48,11 +48,11 @@ export function LoginScreen() {
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-balance md:text-3xl">Inicia sesión</h1>
-          <p className="mt-2 text-sm text-brand-muted">Accede a tu banca en línea de forma segura.</p>
+          <p className="mt-2 text-sm text-slate-600">Accede a tu banca en línea de forma segura.</p>
 
           <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5" noValidate>
             <div className="flex flex-col gap-2">
-              <label htmlFor="email" className="text-sm font-medium text-brand-light">
+              <label htmlFor="email" className="text-sm font-medium text-slate-700">
                 Correo electrónico
               </label>
               <div className="relative">
@@ -65,14 +65,14 @@ export function LoginScreen() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="demo@peya.com"
-                  className="w-full rounded-xl border border-white/15 bg-brand-surface py-3 pl-10 pr-4 text-sm text-brand-text placeholder:text-brand-muted/60 outline-none transition-colors focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/30"
+                  className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/30"
                 />
               </div>
             </div>
 
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-sm font-medium text-brand-light">
+                <label htmlFor="password" className="text-sm font-medium text-slate-700">
                   Contraseña
                 </label>
                 <button
@@ -93,17 +93,17 @@ export function LoginScreen() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••"
-                  className="w-full rounded-xl border border-white/15 bg-brand-surface py-3 pl-10 pr-4 text-sm text-brand-text placeholder:text-brand-muted/60 outline-none transition-colors focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/30"
+                  className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/30"
                 />
               </div>
             </div>
 
-            <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-brand-muted">
+            <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-slate-600">
               <input
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded border-white/20 bg-brand-surface text-brand-accent focus:ring-brand-accent/40"
+                className="h-4 w-4 rounded border-slate-300 bg-white text-brand-accent focus:ring-brand-accent/40"
               />
               <span>Recordar mi sesión en este dispositivo (30 días)</span>
             </label>
@@ -123,7 +123,7 @@ export function LoginScreen() {
               {loading ? "Verificando credenciales..." : "Ingresar"}
             </button>
 
-            <p className="text-sm text-brand-muted">
+            <p className="text-sm text-slate-600">
               ¿No tienes cuenta?{" "}
               <button
                 type="button"
@@ -134,15 +134,15 @@ export function LoginScreen() {
               </button>
             </p>
 
-            <div className="rounded-xl border border-white/10 bg-brand-surface-2 p-3 text-xs text-brand-muted">
-              <span className="font-semibold text-brand-light">Acceso Demo:</span> demo@peya.com / 123456
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+              <span className="font-semibold text-slate-700">Acceso Demo:</span> demo@peya.com / 123456
             </div>
           </form>
         </div>
       </div>
 
-      <aside className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-brand-surface p-12 md:flex">
-        <div className="absolute inset-0 bg-gradient-to-br from-brand-surface to-brand-bg" aria-hidden="true" />
+      <aside className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-slate-50 p-12 md:flex">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-50 to-white" aria-hidden="true" />
         <div className="relative flex items-center gap-2 text-brand-accent">
           <ShieldCheck className="h-6 w-6" aria-hidden="true" />
           <span className="text-sm font-semibold">Banca protegida de extremo a extremo</span>
@@ -152,11 +152,11 @@ export function LoginScreen() {
           <h2 className="max-w-sm text-3xl font-bold leading-tight text-balance">
             Gestiona tus cuentas, movimientos y ahorros en un solo lugar.
           </h2>
-          <p className="mt-4 max-w-sm text-sm leading-relaxed text-brand-muted">
+          <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-600">
             Una plataforma financiera moderna diseñada para darte control total sobre tu dinero.
           </p>
         </div>
-        <div className="relative text-xs text-brand-muted">© {new Date().getFullYear()} Peya. Todos los derechos reservados.</div>
+        <div className="relative text-xs text-slate-500">© {new Date().getFullYear()} Peya. Todos los derechos reservados.</div>
       </aside>
     </main>
   )

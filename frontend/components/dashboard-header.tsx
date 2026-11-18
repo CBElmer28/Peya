@@ -1,9 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Menu, LogOut, ChevronDown } from "lucide-react"
+import { Menu, LogOut, ChevronDown, Moon, Sun } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import type { DashboardViewKey } from "@/components/dashboard-sidebar"
+import { useTheme } from "@/components/theme-provider"
 
 const VIEW_TITLES: Record<DashboardViewKey, string> = {
   home: "Dashboard",
@@ -55,6 +56,7 @@ export function DashboardHeader({
   onNavigate: (view: DashboardViewKey) => void
 }) {
   const { session, signOut } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const userName = session?.user.name ?? "Usuario"
   const role = activeView === "admin" ? "Administrador" : "Titular de cuenta"
   const [menuOpen, setMenuOpen] = useState(false)
@@ -101,6 +103,20 @@ export function DashboardHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="flex h-10 w-10 items-center justify-center rounded-xl text-brand-muted transition-colors duration-150 hover:bg-white/10 hover:text-brand-text"
+          aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+          title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+        >
+          {theme === "dark" ? (
+            <Sun className="h-5 w-5" aria-hidden="true" />
+          ) : (
+            <Moon className="h-5 w-5" aria-hidden="true" />
+          )}
+        </button>
+
         <div ref={menuRef} className="relative">
           <button
             type="button"
