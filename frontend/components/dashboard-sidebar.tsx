@@ -112,7 +112,7 @@ export function DashboardSidebar({
                   <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
                   <span>{item.label}</span>
                   {item.key === "notifications" && unreadNotificationsCount > 0 ? (
-                    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-negative px-1 text-[11px] font-bold leading-none text-white">
+                    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-negative px-1 text-xs font-bold leading-none text-white">
                       {unreadNotificationsCount}
                     </span>
                   ) : null}

@@ -203,9 +203,9 @@ export function ProfileView() {
   return (
     <section className="space-y-6" aria-labelledby="profile-title">
       <div>
-        <h1 id="profile-title" className="text-2xl font-bold text-brand-text">
+        <h2 id="profile-title" className="text-2xl font-bold text-brand-text">
           Mi perfil
-        </h1>
+        </h2>
         <p className="text-sm text-brand-muted">Administra tu información y preferencias de cuenta</p>
       </div>
 

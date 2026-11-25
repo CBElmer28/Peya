@@ -193,7 +193,7 @@ function CreateAccountModal({
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-brand-text">{opt.label}</span>
-                            <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-muted">
+                            <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-xs font-semibold text-brand-muted">
                               {opt.currency}
                             </span>
                           </div>
@@ -400,9 +400,9 @@ export function AccountsView() {
       {/* Header con acciones */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 id="accounts-title" className="text-2xl font-bold tracking-tight text-brand-text md:text-3xl">
+          <h2 id="accounts-title" className="text-2xl font-bold tracking-tight text-brand-text md:text-3xl">
             Mis Cuentas Bancarias
-          </h1>
+          </h2>
           <p className="mt-1 text-sm text-brand-muted">
             Gestiona tus cuentas, visualiza saldos y consulta el detalle de tus movimientos.
           </p>
@@ -511,7 +511,7 @@ export function AccountsView() {
                     >
                       {account.label}
                     </span>
-                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-brand-muted">
+                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs font-bold text-brand-muted">
                       {account.currency}
                     </span>
                   </div>
@@ -541,7 +541,7 @@ export function AccountsView() {
 
                 {/* Saldo Disponible */}
                 <div className="mt-5">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-brand-muted">
+                  <span className="text-xs font-medium uppercase tracking-wider text-brand-muted">
                     Saldo disponible
                   </span>
                   <p className="text-2xl font-extrabold tracking-tight text-brand-text group-hover:text-brand-accent transition-colors">

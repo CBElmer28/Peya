@@ -867,7 +867,7 @@ function AdminDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-brand-text">Panel administrativo</h1>
+        <h2 className="text-2xl font-bold text-brand-text">Panel administrativo</h2>
         <p className="text-sm text-brand-muted">Supervisión general de cuentas y actividad del sistema.</p>
       </div>
 
@@ -1226,7 +1226,7 @@ function ClientManagement({ canManage, canAssignRoles }: { canManage: boolean; c
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-brand-text">Gestión de usuarios</h1>
+          <h2 className="text-2xl font-bold text-brand-text">Gestión de usuarios</h2>
           <p className="text-sm text-brand-muted">Administra cuentas de clientes y administradores del sistema.</p>
         </div>
         {canManage ? (
