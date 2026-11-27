@@ -1068,6 +1068,26 @@ export async function getReceipt(token: string, transferId: string): Promise<Tra
   })
 }
 
+async function simulateTransfer(
+  token: string,
+  sourceAccountId: string,
+  amount: number,
+  prefix: string,
+): Promise<TransferResult> {
+  const accounts = await getAccounts(token)
+  const src = accounts.find((a) => a.id === sourceAccountId) || accounts[0]
+  const currentNum = Number(src.balance.replace(/[^0-9.]/g, "")) || 1000
+  if (amount > currentNum) {
+    throw new Error("INSUFFICIENT_FUNDS")
+  }
+  return delay<TransferResult>({
+    status: "success",
+    transferId: `${prefix}-${Date.now()}`,
+    reference: `OP-${Date.now().toString().slice(-8)}`,
+    newBalance: currentNum - amount,
+  })
+}
+
 export async function createInternalTransfer(
   token: string,
   payload: {
@@ -1077,20 +1097,7 @@ export async function createInternalTransfer(
     description?: string
   },
 ): Promise<TransferResult> {
-  void token
-  const accounts = await getAccounts(token)
-  const src = accounts.find((a) => a.id === payload.sourceAccountId) || accounts[0]
-  const currentNum = Number(src.balance.replace(/[^0-9.]/g, "")) || 1000
-  if (payload.amount > currentNum) {
-    throw new Error("INSUFFICIENT_FUNDS")
-  }
-  const tid = `int-${Date.now()}`
-  return delay<TransferResult>({
-    status: "success",
-    transferId: tid,
-    reference: `OP-${Date.now().toString().slice(-8)}`,
-    newBalance: currentNum - payload.amount,
-  })
+  return simulateTransfer(token, payload.sourceAccountId, payload.amount, "int")
 }
 
 export async function createThirdPartyTransfer(
@@ -1102,18 +1109,5 @@ export async function createThirdPartyTransfer(
     description?: string
   },
 ): Promise<TransferResult> {
-  void token
-  const accounts = await getAccounts(token)
-  const src = accounts.find((a) => a.id === payload.sourceAccountId) || accounts[0]
-  const currentNum = Number(src.balance.replace(/[^0-9.]/g, "")) || 1000
-  if (payload.amount > currentNum) {
-    throw new Error("INSUFFICIENT_FUNDS")
-  }
-  const tid = `ext-${Date.now()}`
-  return delay<TransferResult>({
-    status: "success",
-    transferId: tid,
-    reference: `OP-${Date.now().toString().slice(-8)}`,
-    newBalance: currentNum - payload.amount,
-  })
+  return simulateTransfer(token, payload.sourceAccountId, payload.amount, "ext")
 }
