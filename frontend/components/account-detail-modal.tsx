@@ -180,7 +180,7 @@ export function AccountDetailModal({
                   {copied ? <Check className="h-4 w-4 text-brand-positive" /> : <Copy className="h-4 w-4" />}
                 </button>
               </div>
-              {copied && <span className="text-[10px] text-brand-positive">¡CCI copiado al portapapeles!</span>}
+              {copied && <span className="text-xs text-brand-positive">¡CCI copiado al portapapeles!</span>}
             </div>
           </div>
         </div>
@@ -239,7 +239,7 @@ export function AccountDetailModal({
                         >
                           {mov.amount}
                         </p>
-                        <p className="text-[11px] text-brand-muted">{mov.date}</p>
+                        <p className="text-xs text-brand-muted">{mov.date}</p>
                       </div>
                     </div>
                   )

@@ -301,9 +301,9 @@ function parseBalanceNumber(balanceStr?: string): number {
     <section aria-labelledby="transfers-title" className="mx-auto max-w-3xl space-y-6">
       {/* Encabezado */}
       <div className="text-center sm:text-left">
-        <h1 id="transfers-title" className="text-2xl font-bold tracking-tight text-brand-text md:text-3xl">
+        <h2 id="transfers-title" className="text-2xl font-bold tracking-tight text-brand-text md:text-3xl">
           Transferencias Bancarias
-        </h1>
+        </h2>
         <p className="mt-1 text-sm text-brand-muted">
           Transfiere dinero de forma inmediata entre tus cuentas propias o a cualquier otra cuenta bancaria.
         </p>
@@ -454,12 +454,12 @@ function parseBalanceNumber(balanceStr?: string): number {
                             destinationCci === rec.destinationCci && "border-brand-accent bg-brand-accent/10",
                           )}
                         >
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-accent/20 text-[10px] font-bold text-brand-accent">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-accent/20 text-xs font-bold text-brand-accent">
                             {rec.holder.slice(0, 1)}
                           </div>
                           <div className="text-left">
                             <span className="font-semibold text-brand-text">{rec.holder}</span>
-                            <span className="block text-[10px] text-brand-muted">{rec.maskedNumber}</span>
+                            <span className="block text-xs text-brand-muted">{rec.maskedNumber}</span>
                           </div>
                         </button>
                       ))}
@@ -473,7 +473,7 @@ function parseBalanceNumber(balanceStr?: string): number {
                     <label htmlFor="dest-cci" className="text-xs font-bold uppercase tracking-wider text-brand-muted">
                       CCI o Número de Cuenta Destino
                     </label>
-                    <span className="text-[11px] text-brand-muted">10 a 25 dígitos</span>
+                    <span className="text-xs text-brand-muted">10 a 25 dígitos</span>
                   </div>
                   <div className="relative mt-1.5">
                     <input
@@ -509,7 +509,7 @@ function parseBalanceNumber(balanceStr?: string): number {
                       <p className="mt-0.5 text-sm font-semibold text-brand-positive">
                         {validatedRecipient.holder}
                       </p>
-                      <p className="text-[11px] text-brand-muted font-mono">
+                      <p className="text-xs text-brand-muted font-mono">
                         Cuenta {validatedRecipient.maskedNumber} · Moneda {validatedRecipient.currency}
                       </p>
                     </div>
@@ -701,7 +701,7 @@ function parseBalanceNumber(balanceStr?: string): number {
                 <span className="rounded-full bg-brand-positive/15 px-3 py-1 text-xs font-bold text-brand-positive">
                   COMPLETADO
                 </span>
-                <p className="mt-1 text-[11px] font-mono text-brand-muted">
+                <p className="mt-1 text-xs font-mono text-brand-muted">
                   N° Op: {receipt?.reference || transferResult?.reference}
                 </p>
               </div>
@@ -764,7 +764,7 @@ function parseBalanceNumber(balanceStr?: string): number {
               </div>
             </div>
 
-            <p className="mt-4 text-center text-[11px] text-brand-muted">
+            <p className="mt-4 text-center text-xs text-brand-muted">
               Esta constancia constituye una prueba fehaciente de la transferencia emitida conforme a las normas del sistema financiero.
             </p>
           </div>

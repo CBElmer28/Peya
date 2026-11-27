@@ -129,6 +129,33 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+.light {
+  --color-brand-bg: #f5f7fa;
+  --color-brand-surface: #ffffff;
+  --color-brand-surface-2: #eef1f5;
+  --color-brand-surface2: #eef1f5;
+  --color-brand-text: #181a20;
+  --color-brand-muted: #68717e;
+  --color-brand-light: #303841;
+  --color-brand-positive: #07875a;
+  --color-brand-success: #07875a;
+  --color-brand-negative: #d9364f;
+  --color-brand-danger: #d9364f;
+  color-scheme: light;
+}
+
+.light [class*="border-white/"] {
+  border-color: rgb(24 26 32 / 12%);
+}
+
+.light [class~="bg-white/10"] {
+  background-color: rgb(24 26 32 / 6%);
+}
+
+.light [class*="hover:bg-white/"]:hover {
+  background-color: rgb(24 26 32 / 5%);
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     color-scheme: dark;

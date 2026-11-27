@@ -162,9 +162,9 @@ export function MovementsView() {
       {/* Encabezado */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 id="movements-title" className="text-2xl font-bold tracking-tight text-brand-text md:text-3xl">
+          <h2 id="movements-title" className="text-2xl font-bold tracking-tight text-brand-text md:text-3xl">
             Consulta de operaciones
-          </h1>
+          </h2>
           <p className="text-sm text-brand-muted">
             Revisa tus operaciones, filtra los resultados y consulta el detalle de cada movimiento.
           </p>

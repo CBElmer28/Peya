@@ -136,7 +136,7 @@ export function NotificationsPanel({
             Notificaciones
           </h2>
           {unreadCount > 0 ? (
-            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-brand-negative px-1.5 text-[11px] font-bold leading-none text-white">
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-brand-negative px-1.5 text-xs font-bold leading-none text-white">
               {unreadCount}
             </span>
           ) : null}

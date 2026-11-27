@@ -3,6 +3,7 @@
 import { AuthProvider, useAuth } from "@/components/auth-provider"
 import { LoginScreen } from "@/components/login-screen"
 import { DashboardView } from "@/components/dashboard-view"
+import { ThemeProvider } from "@/components/theme-provider"
 
 // Enrutador de la SPA: decide qué pantalla renderizar según el estado de sesión.
 function AppRouter() {
@@ -13,7 +14,9 @@ function AppRouter() {
 export default function Page() {
   return (
     <AuthProvider>
-      <AppRouter />
+      <ThemeProvider>
+        <AppRouter />
+      </ThemeProvider>
     </AuthProvider>
   )
 }

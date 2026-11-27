@@ -136,7 +136,7 @@ export function RechargeView() {
   return (
     <section className="mx-auto max-w-3xl space-y-6" aria-labelledby="recharge-title">
       <div>
-        <h1 id="recharge-title" className="text-2xl font-bold text-brand-text">Recargar saldo</h1>
+        <h2 id="recharge-title" className="text-2xl font-bold text-brand-text">Recargar saldo</h2>
         <p className="mt-1 text-sm text-brand-muted">
           Busca una de tus cuentas activas por su CCI e indica el monto que quieres recargar.
         </p>
