@@ -8,7 +8,7 @@ import { maskCci } from '../common/masking';
 import { formatMoney } from '../common/money';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService, Tx } from '../prisma/prisma.service';
 import { ProfileResponseDto } from './dto/profile-response.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { businessError } from '../common/business-error';
@@ -71,6 +71,19 @@ function adminToUser(a: AdminRow): User {
 
 function prismaCode(e: unknown): string | undefined {
   return e instanceof Prisma.PrismaClientKnownRequestError ? e.code : undefined;
+}
+
+/** Campos simples del cliente que un administrador puede actualizar (HU17). El correo se valida aparte. */
+function buildClientUpdateData(dto: UpdateUserDto): Prisma.clienteUpdateInput {
+  const data: Prisma.clienteUpdateInput = { fecha_actualizacion: new Date() };
+  const name = dto.name?.trim();
+  if (name) data.nombres = name;
+  if (dto.phone !== undefined) {
+    data.telefono = dto.phone.replace(/\D/g, '').replace(/^51/, '');
+  }
+  if (dto.role) data.rol = dto.role === 'admin' ? 'ADMIN' : 'CLIENTE';
+  if (dto.status) data.estado = dto.status === 'active' ? 'ACTIVO' : 'INACTIVO';
+  return data;
 }
 
 @Injectable()
@@ -375,6 +388,16 @@ export class UsersService {
     }
   }
 
+  private async assertEmailAvailable(tx: Tx, cleanEmail: string, id: string): Promise<void> {
+    const taken = await tx.$queryRaw<{ x: number }[]>`
+      SELECT 1 AS x FROM cliente WHERE lower(correo) = ${cleanEmail} AND id <> ${id}::uuid
+      UNION ALL
+      SELECT 1 FROM admin WHERE lower(correo) = ${cleanEmail} AND id <> ${id}::uuid`;
+    if (taken.length) {
+      throw new ConflictException('El correo electrónico ya está en uso por otro usuario.');
+    }
+  }
+
   /**
    * HU17 · SCRUM-72, 73, 75: Actualización de datos del cliente con validación,
    * protección de campos sensibles (DNI/clave/saldos) y auditoría administrativa.
@@ -393,26 +416,12 @@ export class UsersService {
       if (!rows.length) throw new NotFoundException('Usuario no encontrado');
 
       const cur = rows[0];
-      const data: Prisma.clienteUpdateInput = { fecha_actualizacion: new Date() };
-
-      if (dto.name && dto.name.trim()) data.nombres = dto.name.trim();
-      if (dto.phone !== undefined) {
-        data.telefono = dto.phone.replace(/\D/g, '').replace(/^51/, '');
-      }
-      if (dto.email && dto.email.trim().toLowerCase() !== cur.correo.toLowerCase()) {
-        const cleanEmail = dto.email.trim().toLowerCase();
-        const taken = await tx.$queryRaw<{ x: number }[]>`
-          SELECT 1 AS x FROM cliente WHERE lower(correo) = ${cleanEmail} AND id <> ${id}::uuid
-          UNION ALL
-          SELECT 1 FROM admin WHERE lower(correo) = ${cleanEmail} AND id <> ${id}::uuid`;
-        if (taken.length) {
-          throw new ConflictException('El correo electrónico ya está en uso por otro usuario.');
-        }
+      const data = buildClientUpdateData(dto);
+      const cleanEmail = dto.email?.trim().toLowerCase();
+      if (cleanEmail && cleanEmail !== cur.correo.toLowerCase()) {
+        await this.assertEmailAvailable(tx, cleanEmail, id);
         data.correo = cleanEmail;
       }
-      if (dto.role) data.rol = dto.role === 'admin' ? 'ADMIN' : 'CLIENTE';
-      if (dto.status) data.estado = dto.status === 'active' ? 'ACTIVO' : 'INACTIVO';
-  
 
       const updated = await tx.cliente.update({ where: { id }, data });
 

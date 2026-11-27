@@ -309,30 +309,8 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
     onBackToLogin()
   }
 
-  return (
-    <main className="flex min-h-screen bg-brand-bg text-brand-text">
-      <div className="flex w-full flex-col justify-center px-6 py-12 md:w-1/2 md:px-12 lg:px-20">
-        <div className="mx-auto w-full max-w-md">
-          <button
-            type="button"
-            onClick={resetToLogin}
-            className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-brand-muted transition-colors duration-150 hover:text-brand-text"
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            Volver al login
-          </button>
-
-          <div className="mb-8 flex items-center gap-2">
-            <Sparkles className="h-7 w-7 text-brand-accent" aria-hidden="true" />
-            <span className="text-lg font-bold tracking-tight">Peya</span>
-          </div>
-
-          <h1 className="text-2xl font-bold tracking-tight text-balance md:text-3xl">Crear cuenta</h1>
-          <p className="mt-2 text-sm text-brand-muted">Completa tu registro con verificación de identidad.</p>
-
-          <Stepper step={step} />
-
-          {step === 1 && (
+  function renderDniStep() {
+    return (
             <div className="rounded-xl border border-white/10 bg-brand-surface p-6 shadow-lg">
               <div className="space-y-5">
                 <Field label="Número de DNI" htmlFor="dni">
@@ -394,9 +372,11 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                 </button>
               </div>
             </div>
-          )}
+    )
+  }
 
-          {step === 2 && (
+  function renderFaceStep() {
+    return (
             <div className="rounded-xl border border-white/10 bg-brand-surface p-6 shadow-lg">
               <p className="text-sm leading-relaxed text-brand-muted">
                 Para tu seguridad, necesitamos verificar que eres tú. Puedes subir una foto de tu rostro desde tu equipo o usar tu cámara si está disponible.
@@ -529,9 +509,11 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                 ) : null}
               </div>
             </div>
-          )}
+    )
+  }
 
-          {step === 3 && (
+  function renderContactStep() {
+    return (
             <div className="rounded-xl border border-white/10 bg-brand-surface p-6 shadow-lg">
               <div className="rounded-xl border border-white/10 bg-brand-surface-2 p-4">
                 <div className="flex items-center gap-2 text-brand-positive">
@@ -638,9 +620,11 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                 </button>
               </div>
             </div>
-          )}
+    )
+  }
 
-          {step === 4 && registerOutcome === "success" && (
+  function renderSuccessStep() {
+    return (
             <div className="rounded-xl border border-white/10 bg-brand-surface p-8 text-center shadow-lg">
               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-brand-positive/15">
                 <Check className="h-11 w-11 text-brand-positive" strokeWidth={3} aria-hidden="true" />
@@ -651,9 +635,11 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                 Ir a mi dashboard
               </button>
             </div>
-          )}
+    )
+  }
 
-          {step === 4 && registerOutcome === "error" && (
+  function renderErrorStep() {
+    return (
             <div className="rounded-xl border border-white/10 bg-brand-surface p-8 text-center shadow-lg">
               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-brand-negative/15">
                 <AlertTriangle className="h-11 w-11 text-brand-negative" aria-hidden="true" />
@@ -664,7 +650,41 @@ export function RegisterFlow({ onBackToLogin }: RegisterFlowProps) {
                 Reintentar
               </button>
             </div>
-          )}
+    )
+  }
+
+  return (
+    <main className="flex min-h-screen bg-brand-bg text-brand-text">
+      <div className="flex w-full flex-col justify-center px-6 py-12 md:w-1/2 md:px-12 lg:px-20">
+        <div className="mx-auto w-full max-w-md">
+          <button
+            type="button"
+            onClick={resetToLogin}
+            className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-brand-muted transition-colors duration-150 hover:text-brand-text"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            Volver al login
+          </button>
+
+          <div className="mb-8 flex items-center gap-2">
+            <Sparkles className="h-7 w-7 text-brand-accent" aria-hidden="true" />
+            <span className="text-lg font-bold tracking-tight">Peya</span>
+          </div>
+
+          <h1 className="text-2xl font-bold tracking-tight text-balance md:text-3xl">Crear cuenta</h1>
+          <p className="mt-2 text-sm text-brand-muted">Completa tu registro con verificación de identidad.</p>
+
+          <Stepper step={step} />
+
+          {step === 1 && renderDniStep()}
+
+          {step === 2 && renderFaceStep()}
+
+          {step === 3 && renderContactStep()}
+
+          {step === 4 && registerOutcome === "success" && renderSuccessStep()}
+
+          {step === 4 && registerOutcome === "error" && renderErrorStep()}
 
           {registerError && registerOutcome === "error" ? (
             <p className="sr-only" aria-live="polite">
