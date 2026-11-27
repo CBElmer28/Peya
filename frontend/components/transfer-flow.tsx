@@ -297,55 +297,8 @@ function parseBalanceNumber(balanceStr?: string): number {
     window.print()
   }
 
-  return (
-    <section aria-labelledby="transfers-title" className="mx-auto max-w-3xl space-y-6">
-      {/* Encabezado */}
-      <div className="text-center sm:text-left">
-        <h1 id="transfers-title" className="text-2xl font-bold tracking-tight text-brand-text md:text-3xl">
-          Transferencias Bancarias
-        </h1>
-        <p className="mt-1 text-sm text-brand-muted">
-          Transfiere dinero de forma inmediata entre tus cuentas propias o a cualquier otra cuenta bancaria.
-        </p>
-      </div>
-
-      {/* Indicador de Pasos */}
-      {step < 3 && (
-        <div className="flex items-center justify-center gap-3 py-2">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold",
-                step >= 1 ? "bg-brand-accent text-brand-bg" : "bg-white/10 text-brand-muted",
-              )}
-            >
-              1
-            </span>
-            <span className={cn("text-xs font-semibold", step >= 1 ? "text-brand-text" : "text-brand-muted")}>
-              Datos de operación
-            </span>
-          </div>
-
-          <div className={cn("h-0.5 w-12", step >= 2 ? "bg-brand-accent" : "bg-white/10")} />
-
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold",
-                step === 2 ? "bg-brand-accent text-brand-bg" : "bg-white/10 text-brand-muted",
-              )}
-            >
-              2
-            </span>
-            <span className={cn("text-xs font-semibold", step === 2 ? "text-brand-text" : "text-brand-muted")}>
-              Confirmación
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* PASO 1: Formulario de Transferencia */}
-      {step === 1 && (
+  function renderFormStep() {
+    return (
         <div className="rounded-3xl border border-white/10 bg-brand-surface p-6 shadow-xl sm:p-8">
           {/* Pestañas de Modo (HU09 vs HU10) */}
           <div className="flex rounded-2xl border border-white/10 bg-brand-bg/50 p-1.5">
@@ -583,10 +536,11 @@ function parseBalanceNumber(balanceStr?: string): number {
             </div>
           </div>
         </div>
-      )}
+    )
+  }
 
-      {/* PASO 2: Confirmación Previa */}
-      {step === 2 && (
+  function renderConfirmStep() {
+    return (
         <div className="rounded-3xl border border-white/10 bg-brand-surface p-6 shadow-xl sm:p-8">
           <div className="border-b border-white/10 pb-4">
             <h2 className="text-xl font-bold text-brand-text">Confirmar Transferencia</h2>
@@ -668,10 +622,11 @@ function parseBalanceNumber(balanceStr?: string): number {
             </button>
           </div>
         </div>
-      )}
+    )
+  }
 
-      {/* PASO 3: Constancia Oficial de Transferencia (HU12) */}
-      {step === 3 && (
+  function renderReceiptStep() {
+    return (
         <div className="space-y-6">
           {/* Tarjeta imprimible de constancia */}
           <div
@@ -790,7 +745,64 @@ function parseBalanceNumber(balanceStr?: string): number {
             </button>
           </div>
         </div>
+    )
+  }
+
+  return (
+    <section aria-labelledby="transfers-title" className="mx-auto max-w-3xl space-y-6">
+      {/* Encabezado */}
+      <div className="text-center sm:text-left">
+        <h1 id="transfers-title" className="text-2xl font-bold tracking-tight text-brand-text md:text-3xl">
+          Transferencias Bancarias
+        </h1>
+        <p className="mt-1 text-sm text-brand-muted">
+          Transfiere dinero de forma inmediata entre tus cuentas propias o a cualquier otra cuenta bancaria.
+        </p>
+      </div>
+
+      {/* Indicador de Pasos */}
+      {step < 3 && (
+        <div className="flex items-center justify-center gap-3 py-2">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold",
+                step >= 1 ? "bg-brand-accent text-brand-bg" : "bg-white/10 text-brand-muted",
+              )}
+            >
+              1
+            </span>
+            <span className={cn("text-xs font-semibold", step >= 1 ? "text-brand-text" : "text-brand-muted")}>
+              Datos de operación
+            </span>
+          </div>
+
+          <div className={cn("h-0.5 w-12", step >= 2 ? "bg-brand-accent" : "bg-white/10")} />
+
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold",
+                step === 2 ? "bg-brand-accent text-brand-bg" : "bg-white/10 text-brand-muted",
+              )}
+            >
+              2
+            </span>
+            <span className={cn("text-xs font-semibold", step === 2 ? "text-brand-text" : "text-brand-muted")}>
+              Confirmación
+            </span>
+          </div>
+        </div>
       )}
+
+      {/* PASO 1: Formulario de Transferencia */}
+      {step === 1 && renderFormStep()}
+
+      {/* PASO 2: Confirmación Previa */}
+      {step === 2 && renderConfirmStep()}
+
+      {/* PASO 3: Constancia Oficial de Transferencia (HU12) */}
+      {step === 3 && renderReceiptStep()}
     </section>
   )
 }

@@ -5,6 +5,36 @@ import type * as mockApi from "./mock-api"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api"
 
+async function readErrorBody(res: Response): Promise<{ body: any; rawText: string }> {
+  let rawText = ""
+  try {
+    rawText = await res.text()
+    return { body: rawText ? JSON.parse(rawText) : {}, rawText }
+  } catch {
+    return { body: { message: rawText || `HTTP ${res.status}` }, rawText }
+  }
+}
+
+/** Toma el primer mensaje legible del cuerpo de error (message, error o detail). */
+function extractErrorMessage(errorBody: any, fallback: string): string {
+  const message = errorBody?.message
+  if (typeof message === "string") return message
+  if (Array.isArray(message)) return message.join(", ")
+  const candidate = [errorBody?.error, errorBody?.detail].find((value) => typeof value === "string")
+  return candidate ?? fallback
+}
+
+async function buildHttpError(res: Response): Promise<Error & { statusCode?: number; body?: unknown }> {
+  const { body, rawText } = await readErrorBody(res)
+  const err = new Error(extractErrorMessage(body, rawText || `HTTP ${res.status}`)) as Error & {
+    statusCode?: number
+    body?: unknown
+  }
+  err.statusCode = res.status
+  err.body = body
+  return err
+}
+
 /**
  * Ejecutor HTTP centralizado para peticiones a la API bancaria.
  * Si el servidor está apagado o falla la conexión, arroja un error descriptivo en lugar de enmascararlo con mockups.
@@ -28,33 +58,7 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
   }
 
   if (!res.ok) {
-    let errorBody: any = {}
-    let rawErrorText = ""
-
-    try {
-      rawErrorText = await res.text()
-      if (rawErrorText) {
-        errorBody = JSON.parse(rawErrorText)
-      }
-    } catch {
-      errorBody = { message: rawErrorText || `HTTP ${res.status}` }
-    }
-
-    const message =
-      typeof errorBody?.message === "string"
-        ? errorBody.message
-        : Array.isArray(errorBody?.message)
-          ? errorBody.message.join(", ")
-          : typeof errorBody?.error === "string"
-            ? errorBody.error
-            : typeof errorBody?.detail === "string"
-              ? errorBody.detail
-              : rawErrorText || `HTTP ${res.status}`
-
-    const err = new Error(message) as Error & { statusCode?: number; body?: unknown }
-    err.statusCode = res.status
-    err.body = errorBody
-    throw err
+    throw await buildHttpError(res)
   }
 
   const text = await res.text()

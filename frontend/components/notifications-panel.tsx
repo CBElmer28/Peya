@@ -25,6 +25,65 @@ const NOTIFICATION_CONFIG: Record<
   deposit: { icon: BellRing, bgClass: "bg-teal-500/15", iconClass: "text-teal-400" },
 }
 
+function NotificationDetailDialog({ notification, onClose }: { notification: AppNotification; onClose: () => void }) {
+  return (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="notificacion-detalle-title"
+          onClick={onClose}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-white/10 bg-brand-surface p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="notificacion-detalle-title" className="text-base font-bold text-brand-text">
+              {notification.title}
+            </h3>
+            <p className="mt-1 text-xs text-brand-muted">{notification.detail}</p>
+            <dl className="mt-4 grid gap-3 text-sm">
+              {notification.transferOrigin ? (
+                <div>
+                  <dt className="text-xs text-brand-muted">Remitente</dt>
+                  <dd className="font-medium text-brand-light">{notification.transferOrigin}</dd>
+                </div>
+              ) : null}
+              {notification.amount && notification.currency ? (
+                <div>
+                  <dt className="text-xs text-brand-muted">Monto · {notification.currency}</dt>
+                  <dd className="font-semibold text-brand-positive">
+                    {new Intl.NumberFormat("es-PE", { style: "currency", currency: notification.currency }).format(
+                      Number(notification.amount),
+                    )}
+                  </dd>
+                </div>
+              ) : null}
+              {notification.receivingAccount ? (
+                <div>
+                  <dt className="text-xs text-brand-muted">Cuenta receptora</dt>
+                  <dd className="font-medium text-brand-light">{notification.receivingAccount}</dd>
+                </div>
+              ) : null}
+              {notification.date ? (
+                <div>
+                  <dt className="text-xs text-brand-muted">Fecha</dt>
+                  <dd className="font-medium text-brand-light">{formatNotificationDate(notification.date)}</dd>
+                </div>
+              ) : null}
+            </dl>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-6 w-full rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-brand-text hover:bg-white/5"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+  )
+}
+
 export function NotificationsPanel({
   onUnreadCountChange,
   compact = true,
@@ -122,112 +181,19 @@ export function NotificationsPanel({
     }
   }
 
-  return (
-    <section
-      aria-labelledby="notificaciones-title"
-      className={cn(
-        "flex flex-col rounded-xl border border-white/10 bg-brand-surface p-5 shadow-sm",
-        compact ? "" : "p-6 sm:p-8",
-      )}
-    >
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h2 id="notificaciones-title" className="text-lg font-bold text-brand-text">
-            Notificaciones
-          </h2>
-          {unreadCount > 0 ? (
-            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-brand-negative px-1.5 text-[11px] font-bold leading-none text-white">
-              {unreadCount}
-            </span>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          onClick={markAllRead}
-          disabled={unreadCount === 0}
-          className="shrink-0 text-xs font-semibold text-brand-accent transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Marcar todas leídas
-        </button>
-      </div>
-
-      {!compact ? (
-        <p className="mb-6 text-sm text-brand-muted">
-          Mantente al día con la actividad y las transferencias de tus cuentas.
-        </p>
-      ) : null}
-
-      {actionError ? (
-        <p className="mb-3 text-xs text-brand-negative" role="alert">
-          {actionError}
-        </p>
-      ) : null}
-
-      {selected ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="notificacion-detalle-title"
-          onClick={() => setSelected(null)}
-        >
-          <div
-            className="w-full max-w-md rounded-xl border border-white/10 bg-brand-surface p-6 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 id="notificacion-detalle-title" className="text-base font-bold text-brand-text">
-              {selected.title}
-            </h3>
-            <p className="mt-1 text-xs text-brand-muted">{selected.detail}</p>
-            <dl className="mt-4 grid gap-3 text-sm">
-              {selected.transferOrigin ? (
-                <div>
-                  <dt className="text-xs text-brand-muted">Remitente</dt>
-                  <dd className="font-medium text-brand-light">{selected.transferOrigin}</dd>
-                </div>
-              ) : null}
-              {selected.amount && selected.currency ? (
-                <div>
-                  <dt className="text-xs text-brand-muted">Monto · {selected.currency}</dt>
-                  <dd className="font-semibold text-brand-positive">
-                    {new Intl.NumberFormat("es-PE", { style: "currency", currency: selected.currency }).format(
-                      Number(selected.amount),
-                    )}
-                  </dd>
-                </div>
-              ) : null}
-              {selected.receivingAccount ? (
-                <div>
-                  <dt className="text-xs text-brand-muted">Cuenta receptora</dt>
-                  <dd className="font-medium text-brand-light">{selected.receivingAccount}</dd>
-                </div>
-              ) : null}
-              {selected.date ? (
-                <div>
-                  <dt className="text-xs text-brand-muted">Fecha</dt>
-                  <dd className="font-medium text-brand-light">{formatNotificationDate(selected.date)}</dd>
-                </div>
-              ) : null}
-            </dl>
-            <button
-              type="button"
-              onClick={() => setSelected(null)}
-              className="mt-6 w-full rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-brand-text hover:bg-white/5"
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {loading && notifications.length === 0 ? (
+  function renderContent() {
+    if (loading && notifications.length === 0) {
+      return (
         <div className="flex flex-col gap-3" role="status" aria-label="Cargando notificaciones">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-16 animate-pulse rounded-lg bg-brand-surface-2" />
           ))}
           <span className="sr-only">Cargando notificaciones…</span>
         </div>
-      ) : error ? (
+      )
+    }
+    if (error) {
+      return (
         <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
           <p className="text-sm font-semibold text-brand-text">No pudimos cargar tus notificaciones.</p>
           <p className="mt-1 text-xs text-brand-muted">Revisa tu conexión e inténtalo nuevamente.</p>
@@ -240,13 +206,18 @@ export function NotificationsPanel({
             Reintentar
           </button>
         </div>
-      ) : notifications.length === 0 ? (
+      )
+    }
+    if (notifications.length === 0) {
+      return (
         <div className="rounded-xl border border-dashed border-white/10 px-5 py-10 text-center">
           <BellRing className="mx-auto h-8 w-8 text-brand-muted" aria-hidden="true" />
           <p className="mt-3 text-sm font-semibold text-brand-text">No tienes notificaciones</p>
           <p className="mt-1 text-xs text-brand-muted">Aquí aparecerán las novedades de tus cuentas.</p>
         </div>
-      ) : (
+      )
+    }
+    return (
         <ul className={cn("flex flex-col", compact ? "gap-4" : "divide-y divide-white/10")}>
           {notifications.map((n) => (
             <li key={n.id} className={cn("flex gap-3", compact ? "" : "py-5 first:pt-0 last:pb-0")}>
@@ -323,7 +294,54 @@ export function NotificationsPanel({
             </li>
           ))}
         </ul>
+    )
+  }
+
+
+  return (
+    <section
+      aria-labelledby="notificaciones-title"
+      className={cn(
+        "flex flex-col rounded-xl border border-white/10 bg-brand-surface p-5 shadow-sm",
+        compact ? "" : "p-6 sm:p-8",
       )}
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h2 id="notificaciones-title" className="text-lg font-bold text-brand-text">
+            Notificaciones
+          </h2>
+          {unreadCount > 0 ? (
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-brand-negative px-1.5 text-[11px] font-bold leading-none text-white">
+              {unreadCount}
+            </span>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={markAllRead}
+          disabled={unreadCount === 0}
+          className="shrink-0 text-xs font-semibold text-brand-accent transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Marcar todas leídas
+        </button>
+      </div>
+
+      {!compact ? (
+        <p className="mb-6 text-sm text-brand-muted">
+          Mantente al día con la actividad y las transferencias de tus cuentas.
+        </p>
+      ) : null}
+
+      {actionError ? (
+        <p className="mb-3 text-xs text-brand-negative" role="alert">
+          {actionError}
+        </p>
+      ) : null}
+
+      {selected ? <NotificationDetailDialog notification={selected} onClose={() => setSelected(null)} /> : null}
+
+      {renderContent()}
 
       {compact ? (
         <button

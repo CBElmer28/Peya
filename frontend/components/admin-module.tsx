@@ -185,6 +185,87 @@ function getInitialForm(): ClientFormState {
   return { name: "", email: "", role: "client", status: "active" }
 }
 
+/** Mantiene el foco dentro del dialogo (Tab / Shift+Tab) y cierra con Escape. */
+function handleDialogKeyDown(event: KeyboardEvent, container: HTMLElement | null, onClose: () => void) {
+  if (event.key === "Escape") {
+    event.preventDefault()
+    onClose()
+    return
+  }
+  if (event.key !== "Tab") return
+
+  const focusable = getFocusableElements(container)
+  if (focusable.length === 0) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const target = event.shiftKey ? last : first
+  const boundary = event.shiftKey ? first : last
+  if (document.activeElement === boundary) {
+    event.preventDefault()
+    target.focus()
+  }
+}
+
+type ClientFieldErrors = { name?: string; email?: string }
+
+function validateClientName(name: string): string | undefined {
+  if (!name) return "Ingresa el nombre completo."
+  if (name.length < 2) return "El nombre debe tener al menos 2 caracteres."
+  if (name.length > 100) return "El nombre no puede superar los 100 caracteres."
+  return undefined
+}
+
+function validateClientEmail(email: string, existingClients: Client[], currentId: string | undefined): string | undefined {
+  if (!email) return "Ingresa el correo electrónico."
+  if (email.length > 255) return "El correo no puede superar los 255 caracteres."
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Ingresa un correo electrónico válido."
+  const normalized = email.toLowerCase()
+  const duplicated = existingClients.some((client) => client.id !== currentId && client.email.toLowerCase() === normalized)
+  return duplicated ? "Ya existe un usuario registrado con este correo." : undefined
+}
+
+function validateClientForm(name: string, email: string, existingClients: Client[], currentId: string | undefined): ClientFieldErrors {
+  const errors: ClientFieldErrors = {}
+  const nameError = validateClientName(name)
+  const emailError = validateClientEmail(email, existingClients, currentId)
+  if (nameError) errors.name = nameError
+  if (emailError) errors.email = emailError
+  return errors
+}
+
+function isSensitiveClientChange(mode: ClientModalMode, form: ClientFormState, initialClient: Client | null): boolean {
+  if (mode !== "edit" || initialClient === null) return false
+  return form.role !== initialClient.role || form.status !== initialClient.status
+}
+
+const CLIENT_DIALOG_TEXT: Record<ClientModalMode, { title: string; subtitle: string; submit: string }> = {
+  create: { title: "Crear nuevo usuario", subtitle: "Completa los datos básicos para dar acceso al sistema.", submit: "Crear usuario" },
+  edit: { title: "Editar usuario", subtitle: "Actualiza los datos y el estado del usuario.", submit: "Guardar cambios" },
+}
+
+function getStatusLabel(status: ClientFormState["status"]): string {
+  return status === "active" ? "Activo" : "Inactivo"
+}
+
+function describeSensitiveChange(form: ClientFormState, initialClient: Client | null): string {
+  if (!initialClient) return ""
+  const parts: string[] = []
+  if (form.role !== initialClient.role) {
+    parts.push(`El rol cambiará de ${getClientRoleLabel(initialClient.role)} a ${getClientRoleLabel(form.role)}. `)
+  }
+  if (form.status !== initialClient.status) {
+    parts.push(`El estado cambiará de ${getStatusLabel(initialClient.status)} a ${getStatusLabel(form.status)}.`)
+  }
+  return parts.join("")
+}
+
+function describeClientSaveError(err: unknown, mode: ClientModalMode): string {
+  if (err instanceof Error) return err.message
+  return mode === "create"
+    ? "No se pudo crear el cliente. Revisa los datos e inténtalo nuevamente."
+    : "No se pudo actualizar el cliente. Revisa los datos e inténtalo nuevamente."
+}
+
 function ClientDialog({
   open,
   mode,
@@ -227,25 +308,7 @@ function ClientDialog({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (!open) return
-      if (event.key === "Escape") {
-        event.preventDefault()
-        onClose()
-        return
-      }
-      if (event.key !== "Tab") return
-
-      const focusable = getFocusableElements(dialogRef.current)
-      if (focusable.length === 0) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
+      if (open) handleDialogKeyDown(event, dialogRef.current, onClose)
     }
 
     document.addEventListener("keydown", handleKeyDown)
@@ -271,13 +334,7 @@ function ClientDialog({
       onClose()
     } catch (err) {
       console.error(mode === "create" ? "Error creando cliente:" : "Error actualizando cliente:", err)
-      setError(
-        err instanceof Error
-          ? err.message
-          : mode === "create"
-            ? "No se pudo crear el cliente. Revisa los datos e inténtalo nuevamente."
-            : "No se pudo actualizar el cliente. Revisa los datos e inténtalo nuevamente.",
-      )
+      setError(describeClientSaveError(err, mode))
     } finally {
       setLoading(false)
     }
@@ -286,72 +343,26 @@ function ClientDialog({
   async function handleSubmit() {
     const name = form.name.trim()
     const email = form.email.trim()
-    const nextErrors: { name?: string; email?: string } = {}
-    if (!name) nextErrors.name = "Ingresa el nombre completo."
-    else if (name.length < 2) nextErrors.name = "El nombre debe tener al menos 2 caracteres."
-    else if (name.length > 100) nextErrors.name = "El nombre no puede superar los 100 caracteres."
-    if (!email) nextErrors.email = "Ingresa el correo electrónico."
-    else if (email.length > 255) nextErrors.email = "El correo no puede superar los 255 caracteres."
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) nextErrors.email = "Ingresa un correo electrónico válido."
-    else if (existingClients.some((client) =>
-      client.id !== initialClient?.id && client.email.toLowerCase() === email.toLowerCase(),
-    )) {
-      nextErrors.email = "Ya existe un usuario registrado con este correo."
-    }
+    const nextErrors = validateClientForm(name, email, existingClients, initialClient?.id)
     setFieldErrors(nextErrors)
     setError(null)
     if (Object.keys(nextErrors).length > 0) return
 
-    const sensitiveChange = mode === "edit" && initialClient !== null &&
-      (form.role !== initialClient.role || form.status !== initialClient.status)
-    if (sensitiveChange) {
+    if (isSensitiveClientChange(mode, form, initialClient)) {
       setConfirmSensitive(true)
       return
     }
     await saveForm()
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      <button type="button" aria-label="Cerrar modal" className="absolute inset-0 bg-black/70" onClick={onClose} />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="client-dialog-title"
-        className="relative z-10 w-full max-w-2xl rounded-2xl border border-white/10 bg-brand-surface2 p-5 shadow-2xl"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 id="client-dialog-title" className="text-lg font-bold text-brand-text">
-              {mode === "create" ? "Crear nuevo usuario" : "Editar usuario"}
-            </h3>
-            <p className="mt-1 text-sm text-brand-muted">
-              {mode === "create" ? "Completa los datos básicos para dar acceso al sistema." : "Actualiza los datos y el estado del usuario."}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-brand-muted transition-colors duration-150 hover:bg-white/5 hover:text-brand-text"
-            aria-label="Cerrar"
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-
-        {confirmSensitive ? (
+  function renderSensitiveConfirm() {
+    return (
           <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4" role="alertdialog" aria-labelledby="client-sensitive-change-title">
             <h4 id="client-sensitive-change-title" className="font-semibold text-brand-text">
               Confirma los cambios sensibles
             </h4>
             <p className="mt-2 text-sm text-brand-muted">
-              {initialClient && form.role !== initialClient.role
-                ? `El rol cambiará de ${getClientRoleLabel(initialClient.role)} a ${getClientRoleLabel(form.role)}. `
-                : ""}
-              {initialClient && form.status !== initialClient.status
-                ? `El estado cambiará de ${initialClient.status === "active" ? "Activo" : "Inactivo"} a ${form.status === "active" ? "Activo" : "Inactivo"}.`
-                : ""}
+              {describeSensitiveChange(form, initialClient)}
               {" "}Este cambio puede modificar el acceso del usuario.
             </p>
             {error ? (
@@ -368,7 +379,11 @@ function ClientDialog({
               </button>
             </div>
           </div>
-        ) : (
+    )
+  }
+
+  function renderClientForm() {
+    return (
         <>
         <div className="mt-5 space-y-4">
           <label className="flex flex-col gap-1.5 text-sm text-brand-muted">
@@ -481,15 +496,45 @@ function ClientDialog({
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 Creando...
               </span>
-            ) : mode === "create" ? (
-              "Crear usuario"
             ) : (
-              "Guardar cambios"
+              CLIENT_DIALOG_TEXT[mode].submit
             )}
           </button>
         </div>
         </>
-        )}
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <button type="button" aria-label="Cerrar modal" className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="client-dialog-title"
+        className="relative z-10 w-full max-w-2xl rounded-2xl border border-white/10 bg-brand-surface2 p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 id="client-dialog-title" className="text-lg font-bold text-brand-text">
+              {CLIENT_DIALOG_TEXT[mode].title}
+            </h3>
+            <p className="mt-1 text-sm text-brand-muted">
+              {CLIENT_DIALOG_TEXT[mode].subtitle}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-brand-muted transition-colors duration-150 hover:bg-white/5 hover:text-brand-text"
+            aria-label="Cerrar"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        {confirmSensitive ? renderSensitiveConfirm() : renderClientForm()}
       </div>
     </div>
   )
@@ -520,25 +565,7 @@ function DeleteClientDialog({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (!open) return
-      if (event.key === "Escape") {
-        event.preventDefault()
-        onClose()
-        return
-      }
-      if (event.key !== "Tab") return
-
-      const focusable = getFocusableElements(dialogRef.current)
-      if (focusable.length === 0) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
+      if (open) handleDialogKeyDown(event, dialogRef.current, onClose)
     }
 
     document.addEventListener("keydown", handleKeyDown)
@@ -1504,6 +1531,25 @@ function describeSubadminError(err: unknown, action: string): string {
   return err instanceof Error ? `No se pudo ${action}: ${err.message}` : `No se pudo ${action}. Inténtalo nuevamente.`
 }
 
+function SubadminLoadError({ hasSession, onRetry }: { hasSession: boolean; onRetry: () => void }) {
+  return (
+    <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
+      <p className="text-sm font-semibold text-brand-text">
+        {hasSession ? "No pudimos cargar los subadministradores." : "Inicia sesión para gestionar subadministradores."}
+      </p>
+      {hasSession ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-brand-text hover:bg-white/5"
+        >
+          Reintentar
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function SubadminManagement({ access }: { access: AdminAccess }) {
   const { session } = useAuth()
   const [roles, setRoles] = useState<AssignableRole[]>([])
@@ -1624,22 +1670,7 @@ function SubadminManagement({ access }: { access: AdminAccess }) {
   }
 
   if (loadError) {
-    return (
-      <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
-        <p className="text-sm font-semibold text-brand-text">
-          {session ? "No pudimos cargar los subadministradores." : "Inicia sesión para gestionar subadministradores."}
-        </p>
-        {session ? (
-          <button
-            type="button"
-            onClick={() => setRetryCount((count) => count + 1)}
-            className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-brand-text hover:bg-white/5"
-          >
-            Reintentar
-          </button>
-        ) : null}
-      </div>
-    )
+    return <SubadminLoadError hasSession={Boolean(session)} onRetry={() => setRetryCount((count) => count + 1)} />
   }
 
   const ownPermissions = new Set(access.permissions)
@@ -1849,6 +1880,24 @@ function SubadminManagement({ access }: { access: AdminAccess }) {
   )
 }
 
+const ADMIN_TABS: { key: AdminTab; label: string; requires: string[] }[] = [
+  // El panel consulta metricas y cuentas supervisadas: necesita ambos permisos.
+  { key: "dashboard", label: "Panel administrativo", requires: ["METRICAS_VER", "CUENTAS_SUPERVISAR"] },
+  { key: "clients", label: "Gestión de usuarios", requires: ["CLIENTES_VER"] },
+  { key: "operations", label: "Operaciones", requires: ["CUENTAS_SUPERVISAR"] },
+  { key: "subadmins", label: "Subadministradores", requires: ["ADMINS_GESTIONAR"] },
+]
+
+function getAdminTabs(permissions: string[]): { key: AdminTab; label: string }[] {
+  return ADMIN_TABS.filter((item) => item.requires.every((permission) => permissions.includes(permission))).map(
+    ({ key, label }) => ({ key, label }),
+  )
+}
+
+function resolveActiveTab(tab: AdminTab | null, tabs: { key: AdminTab }[]): AdminTab {
+  return tab && tabs.some((item) => item.key === tab) ? tab : tabs[0].key
+}
+
 export function AdminModule() {
   const { session } = useAuth()
   const [tab, setTab] = useState<AdminTab | null>(null)
@@ -1913,13 +1962,7 @@ export function AdminModule() {
   }
 
   const has = (permission: string) => access.permissions.includes(permission)
-  const tabs: { key: AdminTab; label: string }[] = [
-    // El panel consulta metricas y cuentas supervisadas: necesita ambos permisos.
-    ...(has("METRICAS_VER") && has("CUENTAS_SUPERVISAR") ? [{ key: "dashboard" as const, label: "Panel administrativo" }] : []),
-    ...(has("CLIENTES_VER") ? [{ key: "clients" as const, label: "Gestión de usuarios" }] : []),
-    ...(has("CUENTAS_SUPERVISAR") ? [{ key: "operations" as const, label: "Operaciones" }] : []),
-    ...(has("ADMINS_GESTIONAR") ? [{ key: "subadmins" as const, label: "Subadministradores" }] : []),
-  ]
+  const tabs = getAdminTabs(access.permissions)
 
   if (tabs.length === 0) {
     return (
@@ -1930,7 +1973,7 @@ export function AdminModule() {
     )
   }
 
-  const activeTab = tab && tabs.some((item) => item.key === tab) ? tab : tabs[0].key
+  const activeTab = resolveActiveTab(tab, tabs)
 
   return (
     <div className="space-y-6">

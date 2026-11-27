@@ -50,166 +50,80 @@ function SectionCard({
   )
 }
 
-export function ProfileView() {
-  const { session, setSession } = useAuth()
-  const [profile, setProfile] = useState<ProfileResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
-  const [retryCount, setRetryCount] = useState(0)
-  const [editing, setEditing] = useState(false)
-  const [editEmail, setEditEmail] = useState("")
-  const [editPassword, setEditPassword] = useState("")
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
-  const [editError, setEditError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
-  const [emailNotifications, setEmailNotifications] = useState(true)
-  const [pushNotifications, setPushNotifications] = useState(false)
-  const [weeklySummary, setWeeklySummary] = useState(true)
+const UNAVAILABLE = "No disponible"
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-  useEffect(() => {
-    let active = true
+type FieldErrors = { email?: string; password?: string }
 
-    if (!session) {
-      setProfile(null)
-      setError(true)
-      setLoading(false)
-      return () => {
-        active = false
-      }
-    }
+const UPDATE_ERROR_MESSAGES: Record<string, string> = {
+  INVALID_CURRENT_PASSWORD: "La contraseña actual es incorrecta.",
+  CURRENT_PASSWORD_REQUIRED: "Para cambiar el correo debes indicar tu contraseña actual.",
+  EMAIL_IN_USE: "Ese correo electrónico ya está en uso por otro usuario.",
+  NO_CHANGES: "No hay cambios para guardar.",
+  PROFILE_CONFLICT: "Tu perfil se modificó desde otra sesión. Recargamos tus datos: revisa e inténtalo de nuevo.",
+  FIELD_NOT_EDITABLE: "Alguno de los datos enviados no se puede modificar desde tu perfil.",
+}
 
-    setLoading(true)
-    setError(false)
-    getProfileApi(session.token)
-      .then((data) => {
-        if (active) setProfile(data)
-      })
-      .catch((err) => {
-        console.error("Error cargando el perfil:", err)
-        if (active) setError(true)
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+const STATUS_LABELS: Record<string, string> = { active: "Activa", inactive: "Inactiva" }
 
-    return () => {
-      active = false
-    }
-  }, [session, retryCount])
+function orUnavailable(value: string | null | undefined): string {
+  return value || UNAVAILABLE
+}
 
-  const fullName = profile?.name ?? ""
-  const initials = getInitials(fullName)
-  const unavailable = "No disponible"
-  const registeredAt = profile?.registeredAt
-    ? new Date(`${profile.registeredAt}T00:00:00`).toLocaleDateString("es-PE", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      })
-    : unavailable
+function formatRole(role: string | undefined): string {
+  return role === "admin" ? "Administrador" : "Cliente"
+}
 
-  function openEditor() {
-      if (!profile) return
-      setEditEmail(profile.email)
-      setEditPassword("")
-      setFieldErrors({})
-      setEditError(null)
-      setSaved(false)
-      setEditing(true)
+function formatStatus(status: string | undefined): string {
+  return STATUS_LABELS[status ?? ""] ?? UNAVAILABLE
+}
+
+function formatRegisteredAt(date: string | null | undefined): string {
+  if (!date) return UNAVAILABLE
+  return new Date(`${date}T00:00:00`).toLocaleDateString("es-PE", { day: "numeric", month: "long", year: "numeric" })
+}
+
+function validateEmailFormat(rawEmail: string): string | undefined {
+  const value = rawEmail.trim()
+  if (!value) return "Ingresa tu correo electrónico."
+  if (!EMAIL_PATTERN.test(value)) return "Escribe un correo válido, por ejemplo nombre@dominio.com."
+  return undefined
+}
+
+function getErrorField<T>(err: unknown, field: string): T | undefined {
+  if (typeof err !== "object" || err === null || !(field in err)) return undefined
+  return (err as Record<string, unknown>)[field] as T
+}
+
+function getUpdateErrorCode(err: unknown): string | undefined {
+  return getErrorField<{ error?: string }>(err, "body")?.error
+}
+
+// Mensajes por codigo de error del backend (HU15); el texto del servidor nunca incluye tus datos.
+function describeUpdateError(err: unknown): string {
+  const known = UPDATE_ERROR_MESSAGES[getUpdateErrorCode(err) ?? ""]
+  if (known) return known
+  const statusCode = getErrorField<number>(err, "statusCode")
+  if (statusCode === 401 || statusCode === 403) {
+    return "No tienes permisos para guardar estos cambios. Contacta con soporte si necesitas actualizar tus datos."
   }
+  return err instanceof Error
+    ? `No se pudieron guardar los cambios: ${err.message}`
+    : "No se pudieron guardar los cambios. Inténtalo nuevamente."
+}
 
-  function closeEditor() {
-      setEditing(false)
-      setEditPassword("")
-      setFieldErrors({})
-      setEditError(null)
-  }
+type EditValidation = { errors: FieldErrors; noChanges: boolean }
 
-  // Mensajes por codigo de error del backend (HU15); el texto del servidor nunca incluye tus datos.
-  function describeUpdateError(err: unknown): string {
-    const body = typeof err === "object" && err !== null && "body" in err ? (err as { body?: { error?: string } }).body : undefined
-    switch (body?.error) {
-      case "INVALID_CURRENT_PASSWORD":
-        return "La contraseña actual es incorrecta."
-      case "CURRENT_PASSWORD_REQUIRED":
-        return "Para cambiar el correo debes indicar tu contraseña actual."
-      case "EMAIL_IN_USE":
-        return "Ese correo electrónico ya está en uso por otro usuario."
-      case "NO_CHANGES":
-        return "No hay cambios para guardar."
-      case "PROFILE_CONFLICT":
-        return "Tu perfil se modificó desde otra sesión. Recargamos tus datos: revisa e inténtalo de nuevo."
-      case "FIELD_NOT_EDITABLE":
-        return "Alguno de los datos enviados no se puede modificar desde tu perfil."
-    }
-    const statusCode = typeof err === "object" && err !== null && "statusCode" in err ? (err as { statusCode?: number }).statusCode : undefined
-    if (statusCode === 401 || statusCode === 403) {
-      return "No tienes permisos para guardar estos cambios. Contacta con soporte si necesitas actualizar tus datos."
-    }
-    return err instanceof Error
-      ? `No se pudieron guardar los cambios: ${err.message}`
-      : "No se pudieron guardar los cambios. Inténtalo nuevamente."
-  }
+function validateProfileEdit(email: string, password: string, currentEmail: string): EditValidation {
+  const emailError = validateEmailFormat(email)
+  if (emailError) return { errors: { email: emailError }, noChanges: false }
+  if (email.toLowerCase() === currentEmail.toLowerCase()) return { errors: {}, noChanges: true }
+  if (!password) return { errors: { password: "Ingresa tu contraseña actual para confirmar el cambio." }, noChanges: false }
+  return { errors: {}, noChanges: false }
+}
 
-  async function handleProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
-      event.preventDefault()
-      if (!profile || !session) return
-
-      const nextErrors: { email?: string; password?: string } = {}
-      const email = editEmail.trim()
-      if (!email) nextErrors.email = "Ingresa tu correo electrónico."
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        nextErrors.email = "Escribe un correo válido, por ejemplo nombre@dominio.com."
-      } else if (email.toLowerCase() === profile.email.toLowerCase()) {
-        setFieldErrors({})
-        setSaved(false)
-        setEditError("No hay cambios para guardar: el correo es igual al actual.")
-        return
-      }
-      if (!nextErrors.email && !editPassword) nextErrors.password = "Ingresa tu contraseña actual para confirmar el cambio."
-
-      setFieldErrors(nextErrors)
-      setEditError(null)
-      setSaved(false)
-      if (Object.keys(nextErrors).length > 0) return
-
-      setSaving(true)
-      try {
-        const updatedProfile = await updateProfileApi(session.token, {
-          email,
-          currentPassword: editPassword,
-          expectedUpdatedAt: profile.updatedAt,
-        })
-        setProfile(updatedProfile)
-        setSession({ ...session, user: { ...session.user, email: updatedProfile.email } })
-        setEditing(false)
-        setEditPassword("")
-        setSaved(true)
-      } catch (err) {
-        console.error("Error actualizando el perfil:", err instanceof Error ? err.name : "error")
-        const code = typeof err === "object" && err !== null && "body" in err ? (err as { body?: { error?: string } }).body?.error : undefined
-        if (code === "PROFILE_CONFLICT") {
-          setEditing(false)
-          setRetryCount((count) => count + 1)
-        }
-        setEditError(describeUpdateError(err))
-      } finally {
-        setSaving(false)
-      }
-  }
-
+function ProfileSkeleton() {
   return (
-    <section className="space-y-6" aria-labelledby="profile-title">
-      <div>
-        <h1 id="profile-title" className="text-2xl font-bold text-brand-text">
-          Mi perfil
-        </h1>
-        <p className="text-sm text-brand-muted">Administra tu información y preferencias de cuenta</p>
-      </div>
-
-      {loading ? (
         <div className="space-y-6" role="status" aria-label="Cargando perfil">
           <div className="h-32 animate-pulse rounded-xl border border-white/10 bg-brand-surface" />
           <div className="grid gap-6 lg:grid-cols-2">
@@ -218,17 +132,21 @@ export function ProfileView() {
           </div>
           <span className="sr-only">Cargando datos del perfil…</span>
         </div>
-      ) : error ? (
+  )
+}
+
+function ProfileLoadError({ hasSession, onRetry }: { hasSession: boolean; onRetry: () => void }) {
+  return (
         <div className="rounded-xl border border-brand-negative/30 bg-brand-negative/10 p-5 text-center" role="alert">
           <p className="text-sm font-semibold text-brand-text">
-            {session ? "No pudimos cargar tus datos personales." : "Inicia sesión para consultar tu perfil."}
+            {hasSession ? "No pudimos cargar tus datos personales." : "Inicia sesión para consultar tu perfil."}
           </p>
-          {session ? (
+          {hasSession ? (
             <>
               <p className="mt-1 text-xs text-brand-muted">Revisa tu conexión e inténtalo nuevamente.</p>
               <button
                 type="button"
-                onClick={() => setRetryCount((count) => count + 1)}
+                onClick={onRetry}
                 className="mt-4 inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-brand-text transition-colors hover:bg-white/5"
               >
                 <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -237,34 +155,38 @@ export function ProfileView() {
             </>
           ) : null}
         </div>
-      ) : profile ? (
-        <>
-          <section className="rounded-xl border border-white/10 bg-brand-surface p-5">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
-                <span className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-accent text-2xl font-bold text-brand-bg">
-                  {initials}
-                </span>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl font-bold text-brand-text">{profile.name || unavailable}</h2>
-                    <span className="inline-flex items-center rounded-full bg-brand-positive/15 px-2.5 py-1 text-xs font-semibold text-brand-positive">
-                      {profile.role === "admin" ? "Administrador" : "Cliente"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-brand-muted">{profile.email || unavailable}</p>
-                </div>
-              </div>
+  )
+}
 
-              {!editing ? (
-                <button type="button" onClick={openEditor} className="btn-secondary inline-flex items-center gap-2 self-start sm:self-auto">
-                  <User className="h-4 w-4" aria-hidden="true" />
-                  Editar perfil
-                </button>
-              ) : null}
-            </div>
-            {editing ? (
-              <form onSubmit={handleProfileSubmit} noValidate className="mt-6 border-t border-white/10 pt-5">
+type ProfileEditFormProps = {
+  profile: ProfileResponse
+  editEmail: string
+  setEditEmail: (value: string) => void
+  editPassword: string
+  setEditPassword: (value: string) => void
+  fieldErrors: FieldErrors
+  setFieldErrors: React.Dispatch<React.SetStateAction<FieldErrors>>
+  editError: string | null
+  saving: boolean
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
+}
+
+function ProfileEditForm({
+  profile,
+  editEmail,
+  setEditEmail,
+  editPassword,
+  setEditPassword,
+  fieldErrors,
+  setFieldErrors,
+  editError,
+  saving,
+  onSubmit,
+  onCancel,
+}: ProfileEditFormProps) {
+  return (
+              <form onSubmit={onSubmit} noValidate className="mt-6 border-t border-white/10 pt-5">
                 <h3 className="text-base font-semibold text-brand-text">Editar datos personales</h3>
                 <p className="mt-1 text-sm text-brand-muted">
                   Por ahora solo puedes actualizar tu correo electrónico. Tu nombre, DNI y teléfono no se pueden modificar desde aquí.
@@ -276,7 +198,7 @@ export function ProfileView() {
                     </label>
                     <input
                       id="profile-edit-name"
-                      value={profile.name || unavailable}
+                      value={orUnavailable(profile.name)}
                       readOnly
                       aria-describedby="profile-edit-name-help"
                       className="mt-1 w-full cursor-not-allowed rounded-lg border border-white/10 bg-brand-surface-2 px-3 py-2 text-sm text-brand-muted"
@@ -297,15 +219,7 @@ export function ProfileView() {
                       value={editEmail}
                       onChange={(event) => setEditEmail(event.target.value)}
                       onBlur={() => {
-                        const value = editEmail.trim()
-                        setFieldErrors((current) => ({
-                          ...current,
-                          email: !value
-                            ? "Ingresa tu correo electrónico."
-                            : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-                              ? "Escribe un correo válido, por ejemplo nombre@dominio.com."
-                              : undefined,
-                        }))
+                        setFieldErrors((current) => ({ ...current, email: validateEmailFormat(editEmail) }))
                       }}
                       maxLength={255}
                       aria-invalid={Boolean(fieldErrors.email)}
@@ -322,7 +236,7 @@ export function ProfileView() {
                     </label>
                     <input
                       id="profile-edit-phone"
-                      value={profile.phone || unavailable}
+                      value={orUnavailable(profile.phone)}
                       readOnly
                       aria-describedby="profile-edit-phone-help"
                       className="mt-1 w-full cursor-not-allowed rounded-lg border border-white/10 bg-brand-surface-2 px-3 py-2 text-sm text-brand-muted"
@@ -368,7 +282,7 @@ export function ProfileView() {
                   </button>
                   <button
                     type="button"
-                    onClick={closeEditor}
+                    onClick={onCancel}
                     disabled={saving}
                     className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-brand-text transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -377,36 +291,33 @@ export function ProfileView() {
                   </button>
                 </div>
               </form>
-            ) : null}
-          </section>
-          {saved ? (
-            <p role="status" className="flex items-center gap-2 rounded-lg border border-brand-positive/30 bg-brand-positive/10 px-4 py-3 text-sm text-brand-positive">
-              <Check className="h-4 w-4" aria-hidden="true" />
-              Tus datos se actualizaron correctamente.
-            </p>
-          ) : null}
+  )
+}
 
+function ProfileDetails({ profile }: { profile: ProfileResponse }) {
+  const registeredAt = formatRegisteredAt(profile.registeredAt)
+  return (
           <div className="grid gap-6 lg:grid-cols-2">
             <SectionCard title="Datos personales">
               <dl className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <dt className="text-xs font-medium text-brand-muted">Nombre completo</dt>
-                  <dd className="mt-1 break-words text-sm font-medium text-brand-text">{profile.name || unavailable}</dd>
+                  <dd className="mt-1 break-words text-sm font-medium text-brand-text">{orUnavailable(profile.name)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-brand-muted">DNI</dt>
-                  <dd className="mt-1 text-sm font-medium text-brand-text">{profile.dni || unavailable}</dd>
+                  <dd className="mt-1 text-sm font-medium text-brand-text">{orUnavailable(profile.dni)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-brand-muted">Correo electrónico</dt>
-                  <dd className="mt-1 break-words text-sm font-medium text-brand-text">{profile.email || unavailable}</dd>
+                  <dd className="mt-1 break-words text-sm font-medium text-brand-text">{orUnavailable(profile.email)}</dd>
                 </div>
                 <div>
                   <dt className="flex items-center gap-1 text-xs font-medium text-brand-muted">
                     <Phone className="h-3.5 w-3.5" aria-hidden="true" />
                     Teléfono
                   </dt>
-                  <dd className="mt-1 text-sm font-medium text-brand-text">{profile.phone || unavailable}</dd>
+                  <dd className="mt-1 text-sm font-medium text-brand-text">{orUnavailable(profile.phone)}</dd>
                 </div>
               </dl>
             </SectionCard>
@@ -416,13 +327,13 @@ export function ProfileView() {
                 <div>
                   <dt className="text-xs font-medium text-brand-muted">Tipo de usuario</dt>
                   <dd className="mt-1 text-sm font-medium text-brand-text">
-                    {profile.role === "admin" ? "Administrador" : "Cliente"}
+                    {formatRole(profile.role)}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-brand-muted">Estado de la cuenta</dt>
                   <dd className="mt-1 text-sm font-medium text-brand-text">
-                    {profile.status === "active" ? "Activa" : profile.status === "inactive" ? "Inactiva" : unavailable}
+                    {formatStatus(profile.status)}
                   </dd>
                 </div>
                 <div>
@@ -432,13 +343,205 @@ export function ProfileView() {
               </dl>
             </SectionCard>
           </div>
-        </>
-      ) : (
+  )
+}
+
+function ProfileEmpty() {
+  return (
         <div className="rounded-xl border border-dashed border-white/10 px-5 py-10 text-center">
           <User className="mx-auto h-8 w-8 text-brand-muted" aria-hidden="true" />
           <p className="mt-3 text-sm font-semibold text-brand-text">No hay datos de perfil disponibles</p>
         </div>
-      )}
+  )
+}
+
+function useProfile(token: string | undefined, retryCount: number) {
+  const [profile, setProfile] = useState<ProfileResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const whenActive = (fn: () => void) => {
+      if (active) fn()
+    }
+
+    if (!token) {
+      setProfile(null)
+      setError(true)
+      setLoading(false)
+      return () => {
+        active = false
+      }
+    }
+
+    setLoading(true)
+    setError(false)
+    getProfileApi(token)
+      .then((data) => whenActive(() => setProfile(data)))
+      .catch((err) => {
+        console.error("Error cargando el perfil:", err)
+        whenActive(() => setError(true))
+      })
+      .finally(() => whenActive(() => setLoading(false)))
+
+    return () => {
+      active = false
+    }
+  }, [token, retryCount])
+
+  return { profile, setProfile, loading, error }
+}
+
+export function ProfileView() {
+  const { session, setSession } = useAuth()
+  const [retryCount, setRetryCount] = useState(0)
+  const { profile, setProfile, loading, error } = useProfile(session?.token, retryCount)
+  const [editing, setEditing] = useState(false)
+  const [editEmail, setEditEmail] = useState("")
+  const [editPassword, setEditPassword] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [editError, setEditError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
+  const [emailNotifications, setEmailNotifications] = useState(true)
+  const [pushNotifications, setPushNotifications] = useState(false)
+  const [weeklySummary, setWeeklySummary] = useState(true)
+
+  const retry = () => setRetryCount((count) => count + 1)
+
+  function openEditor() {
+    if (!profile) return
+    setEditEmail(profile.email)
+    setEditPassword("")
+    setFieldErrors({})
+    setEditError(null)
+    setSaved(false)
+    setEditing(true)
+  }
+
+  function closeEditor() {
+    setEditing(false)
+    setEditPassword("")
+    setFieldErrors({})
+    setEditError(null)
+  }
+
+  async function saveProfile(current: ProfileResponse, token: string, email: string) {
+    setSaving(true)
+    try {
+      const updatedProfile = await updateProfileApi(token, {
+        email,
+        currentPassword: editPassword,
+        expectedUpdatedAt: current.updatedAt,
+      })
+      setProfile(updatedProfile)
+      setSession(session ? { ...session, user: { ...session.user, email: updatedProfile.email } } : session)
+      setEditing(false)
+      setEditPassword("")
+      setSaved(true)
+    } catch (err) {
+      console.error("Error actualizando el perfil:", err instanceof Error ? err.name : "error")
+      if (getUpdateErrorCode(err) === "PROFILE_CONFLICT") {
+        setEditing(false)
+        retry()
+      }
+      setEditError(describeUpdateError(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!profile || !session) return
+
+    const email = editEmail.trim()
+    const { errors, noChanges } = validateProfileEdit(email, editPassword, profile.email)
+    setFieldErrors(errors)
+    setSaved(false)
+    if (noChanges) {
+      setEditError("No hay cambios para guardar: el correo es igual al actual.")
+      return
+    }
+    setEditError(null)
+    if (Object.keys(errors).length > 0) return
+
+    await saveProfile(profile, session.token, email)
+  }
+
+  function renderProfile(current: ProfileResponse) {
+    return (
+      <>
+        <section className="rounded-xl border border-white/10 bg-brand-surface p-5">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <span className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-accent text-2xl font-bold text-brand-bg">
+                {getInitials(current.name ?? "")}
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-bold text-brand-text">{orUnavailable(current.name)}</h2>
+                  <span className="inline-flex items-center rounded-full bg-brand-positive/15 px-2.5 py-1 text-xs font-semibold text-brand-positive">
+                    {formatRole(current.role)}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-brand-muted">{orUnavailable(current.email)}</p>
+              </div>
+            </div>
+
+            {editing ? null : (
+              <button type="button" onClick={openEditor} className="btn-secondary inline-flex items-center gap-2 self-start sm:self-auto">
+                <User className="h-4 w-4" aria-hidden="true" />
+                Editar perfil
+              </button>
+            )}
+          </div>
+          {editing ? (
+            <ProfileEditForm
+              profile={current}
+              editEmail={editEmail}
+              setEditEmail={setEditEmail}
+              editPassword={editPassword}
+              setEditPassword={setEditPassword}
+              fieldErrors={fieldErrors}
+              setFieldErrors={setFieldErrors}
+              editError={editError}
+              saving={saving}
+              onSubmit={handleProfileSubmit}
+              onCancel={closeEditor}
+            />
+          ) : null}
+        </section>
+        {saved ? (
+          <p role="status" className="flex items-center gap-2 rounded-lg border border-brand-positive/30 bg-brand-positive/10 px-4 py-3 text-sm text-brand-positive">
+            <Check className="h-4 w-4" aria-hidden="true" />
+            Tus datos se actualizaron correctamente.
+          </p>
+        ) : null}
+        <ProfileDetails profile={current} />
+      </>
+    )
+  }
+
+  function renderContent() {
+    if (loading) return <ProfileSkeleton />
+    if (error) return <ProfileLoadError hasSession={Boolean(session)} onRetry={retry} />
+    if (profile) return renderProfile(profile)
+    return <ProfileEmpty />
+  }
+
+  return (
+    <section className="space-y-6" aria-labelledby="profile-title">
+      <div>
+        <h1 id="profile-title" className="text-2xl font-bold text-brand-text">
+          Mi perfil
+        </h1>
+        <p className="text-sm text-brand-muted">Administra tu información y preferencias de cuenta</p>
+      </div>
+
+      {renderContent()}
 
       <div className="space-y-6">
         <SectionCard title="Seguridad">

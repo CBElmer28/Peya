@@ -48,6 +48,38 @@ export function DashboardView() {
     setSidebarOpen(false)
   }
 
+  function renderView() {
+    const simpleViews: Partial<Record<DashboardViewKey, React.ReactNode>> = {
+      cards: <AccountsView />,
+      movements: <MovementsView />,
+      profile: <ProfileView />,
+      transfers: <TransferFlow />,
+      recharge: <RechargeView />,
+    }
+    if (view in simpleViews) return simpleViews[view]
+    if (view === "admin" && isAdmin) return <AdminModule />
+    if (view === "notifications") {
+      return <NotificationsPanel compact={false} onUnreadCountChange={setUnreadNotificationsCount} />
+    }
+    return (
+      <>
+        <AccountSummary />
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <RecentMovements />
+          </div>
+          <div className="lg:col-span-1">
+            <NotificationsPanel
+              onUnreadCountChange={setUnreadNotificationsCount}
+              onNavigate={handleNavigate}
+            />
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text">
       <DashboardHeader onMenuClick={() => setSidebarOpen((v) => !v)} activeView={view} onNavigate={handleNavigate} />
@@ -70,40 +102,7 @@ export function DashboardView() {
 
       <main className="px-4 pb-10 pt-20 md:pl-64 md:pr-6">
         <div className="mx-auto max-w-6xl space-y-6">
-          {view === "cards" ? (
-            <AccountsView />
-          ) : view === "movements" ? (
-            <MovementsView />
-          ) : view === "profile" ? (
-            <ProfileView />
-          ) : view === "transfers" ? (
-            <TransferFlow />
-          ) : view === "recharge" ? (
-            <RechargeView />
-          ) : view === "admin" && isAdmin ? (
-            <AdminModule />
-          ) : view === "notifications" ? (
-            <NotificationsPanel
-              compact={false}
-              onUnreadCountChange={setUnreadNotificationsCount}
-            />
-          ) : (
-            <>
-              <AccountSummary />
-
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                <div className="lg:col-span-2">
-                  <RecentMovements />
-                </div>
-                <div className="lg:col-span-1">
-                  <NotificationsPanel
-                    onUnreadCountChange={setUnreadNotificationsCount}
-                    onNavigate={handleNavigate}
-                  />
-                </div>
-              </div>
-            </>
-          )}
+          {renderView()}
         </div>
       </main>
     </div>
