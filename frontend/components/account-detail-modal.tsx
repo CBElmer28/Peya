@@ -5,6 +5,8 @@ import {
   X,
   Copy,
   Check,
+  Eye,
+  EyeOff,
   CreditCard,
   Wallet,
   PiggyBank,
@@ -42,9 +44,11 @@ export function AccountDetailModal({
   const [totalPages, setTotalPages] = useState(1)
   const [totalMovements, setTotalMovements] = useState(0)
   const [detailedAccount, setDetailedAccount] = useState<Account | null>(null)
+  const [showFullCci, setShowFullCci] = useState(true)
 
   useEffect(() => {
     setDetailedAccount(null)
+    setShowFullCci(true)
   }, [account?.id])
 
   useEffect(() => {
@@ -156,11 +160,21 @@ export function AccountDetailModal({
             <div className="space-y-1.5 rounded-xl border border-white/10 bg-brand-bg/60 p-3 text-xs">
               <span className="text-brand-muted">Código de Cuenta Interbancaria (CCI):</span>
               <div className="flex items-center gap-2 font-mono font-bold text-brand-text">
-                <span>{maskedCci}</span>
+                <span className="tracking-wide">
+                  {showFullCci ? (activeAccount.fullCci || validCciToCopy) : maskedCci}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowFullCci((v) => !v)}
+                  className="rounded-lg p-1 text-brand-muted hover:bg-white/10 hover:text-brand-text transition-colors"
+                  title={showFullCci ? "Ocultar dígitos del CCI" : "Mostrar CCI completo"}
+                >
+                  {showFullCci ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
                 <button
                   type="button"
                   onClick={() => handleCopy(validCciToCopy)}
-                  className="rounded-lg p-1 text-brand-muted hover:bg-white/10 hover:text-brand-text"
+                  className="rounded-lg p-1 text-brand-muted hover:bg-white/10 hover:text-brand-text transition-colors"
                   title="Copiar CCI completo"
                 >
                   {copied ? <Check className="h-4 w-4 text-brand-positive" /> : <Copy className="h-4 w-4" />}
