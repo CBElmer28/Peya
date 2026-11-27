@@ -4,7 +4,6 @@ import {
   Get,
   Body,
   UseGuards,
-  Request,
   Headers,
   Ip,
   UsePipes,
@@ -26,11 +25,16 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyResetTokenDto } from './dto/verify-reset-token.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AuthUser, CurrentUser } from './decorators/current-user.decorator';
+import { UsersService } from '../users/users.service';
 
 @ApiTags('Autenticación, Sesión & Recuperación (HU2, HU3, HU4)')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly usersService: UsersService,
+  ) {}
 
   // ==========================================
   // HU2 - INICIO DE SESIÓN SEGURO (SCRUM-14)
@@ -79,8 +83,8 @@ export class AuthController {
   })
   @ApiResponse({ status: 200, description: 'Perfil obtenido exitosamente.' })
   @ApiResponse({ status: 401, description: 'No autorizado (Token revocado, inválido o expirado).' })
-  async getProfile(@Request() req: any) {
-    return req.user;
+  async getProfile(@CurrentUser() user: AuthUser) {
+    return this.usersService.getProfile(user.id);
   }
 
   // ==========================================

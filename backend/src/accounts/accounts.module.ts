@@ -3,8 +3,10 @@ import { AccountsController } from './accounts.controller';
 import { MovementsController } from './movements.controller';
 import { AccountsService } from './accounts.service';
 import { MovementsService } from './movements.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [AccountsController, MovementsController],
   providers: [AccountsService, MovementsService],
   exports: [AccountsService, MovementsService],

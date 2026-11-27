@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
@@ -96,15 +96,18 @@ export class AuthService {
 
     // 2. Búsqueda de usuario
     const user = await this.usersService.findByEmail(cleanEmail);
+    if (user && user.status !== 'active') {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        message: 'Tu cuenta se encuentra inactiva o bloqueada por seguridad. Contacta al soporte de BankHub.',
+        errorCode: 'ACCOUNT_BLOCKED',
+      });
+    }
 
     // 3. Verificación de contraseña
     let isMatch = false;
     if (user) {
       isMatch = await bcrypt.compare(dto.password, user.passwordHash);
-      // Fallback demo password
-      if (!isMatch && dto.password === '123456') {
-        isMatch = true;
-      }
     }
 
     if (!user || !isMatch) {
@@ -144,6 +147,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      jti: randomUUID(), // identificador único: dos logins en el mismo segundo ya no generan el mismo token
     };
 
     const expiresIn = dto.rememberMe ? '30d' : '24h';
@@ -323,6 +327,13 @@ export class AuthService {
 
     // 2. Buscar usuario
     const user = await this.usersService.findByEmail(cleanEmail);
+    if (user && user.status !== 'active') {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        message: 'Tu cuenta se encuentra inactiva o bloqueada por seguridad. Contacta al soporte de BankHub.',
+        errorCode: 'ACCOUNT_BLOCKED',
+      });
+    }
     if (!user) {
       throw new NotFoundException('Usuario no encontrado.');
     }

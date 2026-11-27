@@ -10,6 +10,7 @@ import { RecentMovements } from "@/components/recent-movements"
 import { NotificationsPanel } from "@/components/notifications-panel"
 import { ProfileView } from "@/components/profile-view"
 import { TransferFlow } from "@/components/transfer-flow"
+import { RechargeView } from "@/components/recharge-view"
 import { AdminModule } from "@/components/admin-module"
 import { useAuth } from "@/components/auth-provider"
 import { getNotificationsApi } from "@/lib/api-client"
@@ -19,6 +20,7 @@ export function DashboardView() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [view, setView] = useState<DashboardViewKey>("home")
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0)
+  const isAdmin = session?.user.role === "admin"
 
   useEffect(() => {
     if (!session) {
@@ -27,10 +29,14 @@ export function DashboardView() {
     }
 
     let active = true
-    getNotificationsApi(session.token).then((items) => {
-      if (!active) return
-      setUnreadNotificationsCount(items.filter((item) => item.unread).length)
-    })
+    getNotificationsApi(session.token)
+      .then((items) => {
+        if (!active) return
+        setUnreadNotificationsCount(items.filter((item) => item.unread).length)
+      })
+      .catch((error) => {
+        console.error("Error cargando el contador de notificaciones:", error)
+      })
 
     return () => {
       active = false
@@ -50,6 +56,7 @@ export function DashboardView() {
         activeView={view}
         onNavigate={handleNavigate}
         unreadNotificationsCount={unreadNotificationsCount}
+        isAdmin={isAdmin}
       />
 
       {sidebarOpen && (
@@ -71,8 +78,15 @@ export function DashboardView() {
             <ProfileView />
           ) : view === "transfers" ? (
             <TransferFlow />
-          ) : view === "admin" ? (
+          ) : view === "recharge" ? (
+            <RechargeView />
+          ) : view === "admin" && isAdmin ? (
             <AdminModule />
+          ) : view === "notifications" ? (
+            <NotificationsPanel
+              compact={false}
+              onUnreadCountChange={setUnreadNotificationsCount}
+            />
           ) : (
             <>
               <AccountSummary />
@@ -82,7 +96,10 @@ export function DashboardView() {
                   <RecentMovements />
                 </div>
                 <div className="lg:col-span-1">
-                  <NotificationsPanel onUnreadCountChange={setUnreadNotificationsCount} />
+                  <NotificationsPanel
+                    onUnreadCountChange={setUnreadNotificationsCount}
+                    onNavigate={handleNavigate}
+                  />
                 </div>
               </div>
             </>

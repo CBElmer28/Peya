@@ -71,8 +71,29 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
 // ==========================================
 
 export async function getNotificationsApi(token?: string): Promise<mockApi.AppNotification[]> {
-  return fetchApi<mockApi.AppNotification[]>("/accounts/notifications", {
+  return fetchApi<mockApi.AppNotification[]>("/notifications", {
     method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
+export async function getNotificationApi(id: string, token?: string): Promise<mockApi.AppNotification> {
+  return fetchApi<mockApi.AppNotification>(`/notifications/${encodeURIComponent(id)}`, {
+    method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
+export async function markNotificationReadApi(id: string, token?: string): Promise<mockApi.AppNotification> {
+  return fetchApi<mockApi.AppNotification>(`/notifications/${encodeURIComponent(id)}/read`, {
+    method: "PATCH",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
+export async function markAllNotificationsReadApi(token?: string): Promise<{ updated: number }> {
+  return fetchApi<{ updated: number }>("/notifications/read-all", {
+    method: "PATCH",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
 }
@@ -195,10 +216,10 @@ export async function getAccountDetailApi(
 export async function searchMovementsApi(
   token: string,
   params: mockApi.MovementsQueryParams,
-): Promise<mockApi.MovementsPageResponse> {
+): Promise<MovementsSearchPage> {
   const queryParts: string[] = []
   if (params.page) queryParts.push(`page=${params.page}`)
-  if (params.limit) queryParts.push(`limit=${params.limit}`)
+  if (params.limit) queryParts.push(`pageSize=${params.limit}`)
   if (params.from) queryParts.push(`from=${encodeURIComponent(params.from)}`)
   if (params.to) queryParts.push(`to=${encodeURIComponent(params.to)}`)
   if (params.type && params.type !== "all") queryParts.push(`type=${params.type}`)
@@ -207,10 +228,29 @@ export async function searchMovementsApi(
 
   const qs = queryParts.length ? `?${queryParts.join("&")}` : ""
 
-  return fetchApi<mockApi.MovementsPageResponse>(`/movements${qs}`, {
+  return fetchApi<MovementsSearchPage>(`/movements${qs}`, {
     method: "GET",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
+}
+
+export type MovementsSearchPage = {
+  items: {
+    id: string
+    accountId: string
+    accountMasked: string
+    type: "CREDITO" | "DEBITO"
+    category: string
+    description: string
+    amount: string
+    currency: string
+    balanceAfter: string
+    date: string
+  }[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
 }
 
 // ==========================================
@@ -224,10 +264,90 @@ export async function logoutApi(token?: string) {
   })
 }
 
-export async function getProfileApi(token: string) {
-  return fetchApi<{ id: string; name: string; email: string; role: string }>("/auth/profile", {
+export type ProfileResponse = {
+  id: string
+  name: string
+  email: string
+  role: "client" | "admin"
+  dni?: string
+  phone?: string
+  status?: "active" | "inactive"
+  registeredAt?: string
+  updatedAt?: string
+}
+
+export async function getProfileApi(token: string): Promise<ProfileResponse> {
+  return fetchApi<ProfileResponse>("/auth/profile", {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+/**
+ * HU15 · PATCH /users/me. Solo el correo es editable (exige la contraseña actual); nombre, DNI y
+ * teléfono los rechaza el servidor. expectedUpdatedAt evita pisar cambios hechos desde otra sesión.
+ */
+export async function updateProfileApi(
+  token: string,
+  payload: { email: string; currentPassword: string; expectedUpdatedAt?: string },
+): Promise<ProfileResponse> {
+  return fetchApi<ProfileResponse>("/users/me", {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  })
+}
+
+// ==========================================
+// SUBADMINISTRADORES, ROLES Y PERMISOS (HU16)
+// ==========================================
+
+export type AdminAccess = { roles: string[]; permissions: string[] }
+
+export type AssignableRole = { name: string; description: string | null; permissions: string[] }
+
+export type SubadminView = {
+  id: string
+  name: string
+  email: string
+  status: "active" | "inactive"
+  roles: string[]
+  permissions: string[]
+  createdAt: string
+}
+
+const adminHeaders = (token: string) => ({ Authorization: `Bearer ${token}` })
+
+/** Roles y permisos efectivos del administrador autenticado (el servidor es la fuente de verdad). */
+export async function getAdminAccessApi(token: string): Promise<AdminAccess> {
+  return fetchApi<AdminAccess>("/admin/access", { method: "GET", headers: adminHeaders(token) })
+}
+
+/** Solo los roles que el administrador puede asignar sin superar sus propios permisos. */
+export async function getAssignableRolesApi(token: string): Promise<AssignableRole[]> {
+  return fetchApi<AssignableRole[]>("/admin/subadmins/assignable-roles", { method: "GET", headers: adminHeaders(token) })
+}
+
+export async function getSubadminsApi(token: string): Promise<SubadminView[]> {
+  return fetchApi<SubadminView[]>("/admin/subadmins", { method: "GET", headers: adminHeaders(token) })
+}
+
+export async function createSubadminApi(
+  token: string,
+  payload: { name: string; email: string; password: string; roles: string[] },
+): Promise<SubadminView> {
+  return fetchApi<SubadminView>("/admin/subadmins", {
+    method: "POST",
+    headers: adminHeaders(token),
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function changeSubadminRolesApi(token: string, id: string, roles: string[]): Promise<SubadminView> {
+  return fetchApi<SubadminView>(`/admin/subadmins/${encodeURIComponent(id)}/roles`, {
+    method: "PATCH",
+    headers: adminHeaders(token),
+    body: JSON.stringify({ roles }),
   })
 }
 
@@ -384,6 +504,18 @@ export async function updateClientApi(
   })
 }
 
+export async function updateClientStatusApi(
+  token: string,
+  clientId: string,
+  status: mockApi.ClientStatus,
+): Promise<mockApi.Client> {
+  return fetchApi<mockApi.Client>(`/users/${encodeURIComponent(clientId)}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ status }),
+  })
+}
+
 export async function deleteClientApi(token: string, clientId: string): Promise<{ success?: boolean; ok?: boolean }> {
   return fetchApi<{ success?: boolean; ok?: boolean }>(`/users/${encodeURIComponent(clientId)}`, {
     method: "DELETE",
@@ -402,5 +534,91 @@ export async function getSupervisedAccountsApi(token?: string): Promise<mockApi.
   return fetchApi<mockApi.SupervisedAccount[]>("/admin/accounts", {
     method: "GET",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
+// ==========================================
+// RECARGAS (SCRUM-91)
+// ==========================================
+
+export interface RechargeResult {
+  success: boolean
+  movementId: string
+  accountId: string
+  cci: string
+  maskedCci: string
+  amount: string
+  numericAmount: number
+  newBalance: string
+  numericBalance: number
+  currency: "PEN" | "USD"
+  date: string
+  description: string
+}
+
+export async function rechargeAccountApi(
+  token: string,
+  payload: { cci: string; amount: number; description?: string },
+  idempotencyKey: string,
+): Promise<RechargeResult> {
+  return fetchApi<RechargeResult>("/accounts/recharge", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(payload),
+  })
+}
+
+// ==========================================
+// CONSULTA DE OPERACIONES (HU18)
+// ==========================================
+
+export interface OperationItem {
+  id: string
+  accountId: string
+  accountCci: string
+  accountMasked: string
+  currency: string
+  clientId: string
+  clientDni: string
+  clientName: string
+  type: "CREDITO" | "DEBITO" | string
+  category: string
+  amount: string
+  numericAmount: number
+  balanceAfter: string
+  numericBalanceAfter: number
+  description: string
+  date: string
+}
+
+export interface OperationsPage {
+  items: OperationItem[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface OperationsFilters {
+  q?: string
+  type?: "TODOS" | "CREDITO" | "DEBITO"
+  from?: string
+  to?: string
+  minAmount?: string
+  maxAmount?: string
+  page?: number
+  pageSize?: number
+}
+
+export async function getOperationsApi(token: string, filters: OperationsFilters): Promise<OperationsPage> {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === undefined || value === "" || value === "TODOS") continue
+    params.set(key, String(value))
+  }
+  const qs = params.toString()
+  return fetchApi<OperationsPage>(`/admin/operations${qs ? `?${qs}` : ""}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
   })
 }

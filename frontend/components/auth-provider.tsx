@@ -52,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: {
         name: result.user.name,
         email: result.user.email,
+        role: result.user.role === "admin" ? "admin" : "client",
       },
     }
 

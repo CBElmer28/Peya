@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
   IsNotEmpty,
@@ -6,6 +6,7 @@ import {
   Length,
   Matches,
   IsOptional,
+  IsIn,
 } from 'class-validator';
 
 export class RegisterDto {
@@ -79,6 +80,7 @@ export class CreateUserDto {
 
   @ApiProperty({ example: 'admin', enum: ['client', 'admin'] })
   @IsNotEmpty()
+  @IsIn(['client', 'admin'])
   role: 'client' | 'admin';
 }
 
@@ -93,11 +95,35 @@ export class UpdateUserDto {
   @IsEmail()
   email?: string;
 
+  @ApiProperty({ example: '987654321', required: false })
+  @IsOptional()
+  @Matches(/^(\+51)?9\d{8}$/, { message: 'El teléfono debe ser un celular peruano válido' })
+  phone?: string;
+
   @ApiProperty({ example: 'admin', enum: ['client', 'admin'], required: false })
   @IsOptional()
+  @IsIn(['client', 'admin'])
   role?: 'client' | 'admin';
 
   @ApiProperty({ example: 'active', enum: ['active', 'inactive'], required: false })
   @IsOptional()
+  @IsIn(['active', 'inactive'])
   status?: 'active' | 'inactive';
+
+  @ApiPropertyOptional({ example: 'Actualización de datos por solicitud del cliente' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class ChangeStatusDto {
+  @ApiPropertyOptional({ example: 'inactive', enum: ['active', 'inactive'] })
+  @IsOptional()
+  @IsIn(['active', 'inactive'])
+  status?: 'active' | 'inactive';
+
+  @ApiPropertyOptional({ example: 'Bloqueo preventivo por reporte de seguridad' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }

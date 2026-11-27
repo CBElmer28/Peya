@@ -10,6 +10,7 @@ const VIEW_TITLES: Record<DashboardViewKey, string> = {
   cards: "Cuentas",
   movements: "Movimientos",
   transfers: "Transferencias",
+  recharge: "Recargas",
   admin: "Administración",
   notifications: "Notificaciones",
   profile: "Perfil",
